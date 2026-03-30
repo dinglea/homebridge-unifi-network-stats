@@ -1,0 +1,56 @@
+{
+  "pluginAlias": "UnifiNetworkStats",
+  "pluginType": "platform",
+  "singular": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Platform Name",
+        "type": "string",
+        "default": "UniFi Network Stats"
+      },
+      "host": {
+        "title": "UniFi Controller Host",
+        "type": "string",
+        "description": "IP or hostname of your self-hosted UniFi Network controller (e.g. 192.168.1.10)",
+        "required": true
+      },
+      "port": {
+        "title": "Controller Port",
+        "type": "integer",
+        "default": 8443,
+        "description": "HTTPS port — self-hosted UniFi Network Application uses 8443 by default"
+      },
+      "username": {
+        "title": "Username",
+        "type": "string",
+        "required": true
+      },
+      "password": {
+        "title": "Password",
+        "type": "string",
+        "required": true
+      },
+      "site": {
+        "title": "Site Name",
+        "type": "string",
+        "default": "default",
+        "description": "UniFi site name — visible in the URL of your controller dashboard"
+      },
+      "pollInterval": {
+        "title": "Poll Interval (seconds)",
+        "type": "integer",
+        "default": 5,
+        "minimum": 5,
+        "description": "How often to fetch WAN stats. 5 seconds is the recommended minimum."
+      },
+      "rejectUnauthorized": {
+        "title": "Verify SSL Certificate",
+        "type": "boolean",
+        "default": false,
+        "description": "Disable for self-signed certificates (standard for local controllers)"
+      }
+    }
+  }
+}
