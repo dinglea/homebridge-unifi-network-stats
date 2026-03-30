@@ -1,0 +1,41 @@
+{
+  "name": "homebridge-unifi-network-stats",
+  "version": "1.0.0",
+  "description": "Homebridge plugin that exposes UniFi network upload/download speeds as HomeKit sensors",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "npx tsc",
+    "watch": "npx tsc --watch",
+    "prepublishOnly": "npm run build",
+    "lint": "npx eslint src --ext .ts"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "unifi",
+    "network",
+    "homekit",
+    "raspberry-pi"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "homebridge": ">=1.6.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "tough-cookie": "^4.1.3",
+    "axios-cookiejar-support": "^4.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "homebridge": "^1.8.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "homebridge": "^1.6.0"
+  }
+}
