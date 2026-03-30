@@ -26,7 +26,6 @@ export class UnifiNetworkStatsPlatform implements IndependentPlatformPlugin {
   private readonly downloadSensor: SpeedSensorAccessory;
   private readonly uploadSensor: SpeedSensorAccessory;
   private readonly wanStatus: WanStatusAccessory;
-  private pollTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     public readonly log: Logger,
@@ -77,7 +76,11 @@ export class UnifiNetworkStatsPlatform implements IndependentPlatformPlugin {
   }
 
   getAccessories() {
-    return [this.downloadSensor, this.uploadSensor, this.wanStatus];
+    return [
+      this.downloadSensor.getAccessory(),
+      this.uploadSensor.getAccessory(),
+      this.wanStatus.getAccessory(),
+    ];
   }
 
   private startPolling(intervalSeconds: number): void {
