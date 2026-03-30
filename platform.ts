@@ -26,6 +26,7 @@ export class UnifiNetworkStatsPlatform implements IndependentPlatformPlugin {
   private readonly downloadSensor: SpeedSensorAccessory;
   private readonly uploadSensor: SpeedSensorAccessory;
   private readonly wanStatus: WanStatusAccessory;
+  private pollTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     public readonly log: Logger,
