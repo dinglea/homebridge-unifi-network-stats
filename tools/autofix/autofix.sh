@@ -138,7 +138,7 @@ elif [[ $DEPLOYED_COMMIT != "$BASE" ]] && ! as_user git diff --quiet "$DEPLOYED_
   PULLED_CHANGES=1
 fi
 log "Installed v${INSTALLED_VERSION:-none}, repo v$HEAD_VERSION; pulled code needs deploying: $([[ $PULLED_CHANGES -eq 1 ]] && echo yes || echo no)"
-if [[ -n $(as_user git rev-list "origin/$BRANCH..HEAD") ]]; then
+if [[ $DRY_RUN -ne 1 && -n $(as_user git rev-list "origin/$BRANCH..HEAD") ]]; then
   log "Pushing commits left unpushed by an earlier run"
   git_auth push -q origin "$BRANCH" 2>&1 | redact || log "Push still failing; continuing"
 fi
