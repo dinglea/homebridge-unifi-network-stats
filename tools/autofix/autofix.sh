@@ -39,7 +39,9 @@ GITHUB_TOKEN=
 [[ -f $CONF ]] && . "$CONF"
 
 [[ $EUID -eq 0 ]] || { echo "Must run as root" >&2; exit 1; }
-mkdir -p "$STATE/runs" && chmod 700 "$STATE"
+# Packages must be readable by the homebridge user (npm install runs as it); run logs stay root-only.
+PKGS=$STATE/packages
+mkdir -p "$STATE/runs" "$PKGS" && chmod 755 "$STATE" "$PKGS" && chmod 700 "$STATE/runs"
 RUN_ID=$(date +%Y%m%d-%H%M%S)
 RUN_DIR=$STATE/runs/$RUN_ID
 mkdir -p "$RUN_DIR"
@@ -75,8 +77,10 @@ restore_repo() {
 rollback_install() {
   [[ $DEPLOYED -eq 1 && -n $ROLLBACK_TGZ ]] || return 0
   log "Rolling back Homebridge install to $(basename "$ROLLBACK_TGZ")"
-  as_hb npm uninstall "$PLUGIN" >/dev/null 2>&1 || true
-  as_hb npm install "$ROLLBACK_TGZ" >/dev/null 2>&1
+  # Install over the top (no uninstall first) so the plugin is never missing.
+  as_hb npm install "$ROLLBACK_TGZ" > "$RUN_DIR/rollback.txt" 2>&1 \
+    || log "ROLLBACK INSTALL FAILED - fix manually: $ROLLBACK_TGZ (see $RUN_DIR/rollback.txt)"
+  [[ -f $HB_DIR/node_modules/$PLUGIN/package.json ]] || log "WARNING: $PLUGIN is not installed after rollback"
   "$LIB/patch-homebridge-ui-icon.sh" >/dev/null 2>&1 || true
   hb-service restart >/dev/null 2>&1 || true
   DEPLOYED=0
@@ -211,20 +215,22 @@ fi
 as_user rm -rf dist
 as_user npm run build >/dev/null
 TGZ_NAME=$(as_user npm pack --silent | tail -1)
-install -m 644 "$REPO/$TGZ_NAME" "$STATE/$TGZ_NAME" && rm -f "$REPO/$TGZ_NAME"
+install -m 644 "$REPO/$TGZ_NAME" "$PKGS/$TGZ_NAME" && rm -f "$REPO/$TGZ_NAME"
 log "Packed $TGZ_NAME"
 
 # Snapshot the currently installed plugin so we can roll back to exactly what was running.
 if [[ -d $HB_DIR/node_modules/$PLUGIN ]]; then
-  OLD_NAME=$( (cd "$STATE" && npm_config_cache=$STATE/npm-cache PATH=$NODE_BIN:$PATH npm pack --silent "$HB_DIR/node_modules/$PLUGIN" 2>/dev/null) | tail -1)
-  ROLLBACK_TGZ=$STATE/rollback-$OLD_NAME
-  mv "$STATE/$OLD_NAME" "$ROLLBACK_TGZ" && chmod 644 "$ROLLBACK_TGZ"
+  OLD_NAME=$( (cd "$PKGS" && npm_config_cache=$STATE/npm-cache PATH=$NODE_BIN:$PATH npm pack --silent "$HB_DIR/node_modules/$PLUGIN" 2>/dev/null) | tail -1)
+  ROLLBACK_TGZ=$PKGS/rollback-$OLD_NAME
+  mv "$PKGS/$OLD_NAME" "$ROLLBACK_TGZ" && chmod 644 "$ROLLBACK_TGZ"
 fi
+for f in "$PKGS/$TGZ_NAME" ${ROLLBACK_TGZ:+"$ROLLBACK_TGZ"}; do
+  runuser -u "$HB_USER" -- test -r "$f" || fail "$HB_USER cannot read $f; not deploying"
+done
 
 FROM=$(( $(wc -l < "$HB_LOG") + 1 ))
 DEPLOYED=1
-as_hb npm uninstall "$PLUGIN" >/dev/null 2>&1
-as_hb npm install "$STATE/$TGZ_NAME" > "$RUN_DIR/install.txt" 2>&1 || fail "npm install into Homebridge failed"
+as_hb npm install "$PKGS/$TGZ_NAME" > "$RUN_DIR/install.txt" 2>&1 || fail "npm install into Homebridge failed"
 "$LIB/patch-homebridge-ui-icon.sh" >/dev/null 2>&1 || log "UI icon patch not applied (UI layout changed?)"
 hb-service restart >/dev/null 2>&1
 log "Installed $NEW, restarted Homebridge; waiting for plugin to log in"
@@ -265,4 +271,4 @@ else
   exit 1
 fi
 # Keep the last 5 packed builds.
-ls -1t "$STATE"/*.tgz 2>/dev/null | tail -n +6 | xargs -r rm -f
+ls -1t "$PKGS"/*.tgz 2>/dev/null | tail -n +6 | xargs -r rm -f
