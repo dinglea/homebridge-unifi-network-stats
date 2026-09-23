@@ -50,6 +50,12 @@
         "type": "boolean",
         "default": false,
         "description": "Disable for self-signed certificates (standard for local controllers)"
+      },
+      "showLatency": {
+        "title": "Show WAN Latency Sensor",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds a \"WAN Latency\" light sensor showing internet latency in ms (1 ms = 1 lux), as reported by UniFi's internet health check. Uses the existing poll, no extra requests."
       }
     }
   }

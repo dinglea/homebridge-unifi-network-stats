@@ -7,7 +7,11 @@ export interface UnifiConfig {
   site: string; rejectUnauthorized: boolean;
 }
 
-export interface WanStats { downloadMbps: number; uploadMbps: number; isOnline: boolean; }
+export interface WanStats {
+  downloadMbps: number; uploadMbps: number; isOnline: boolean;
+  /** Internet latency from the "www" health subsystem, or null when UniFi doesn't report one. */
+  latencyMs: number | null;
+}
 
 const MIN_LOGIN_BACKOFF_MS = 30_000;
 const MAX_LOGIN_BACKOFF_MS = 10 * 60_000;
@@ -30,6 +34,15 @@ function statusOf(err: unknown): number | undefined {
 function rate(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function latency(value: unknown): number | null {
+  // Number(null) and Number('') are 0, so require an actual number or numeric string.
+  if (typeof value !== 'number' && (typeof value !== 'string' || value.trim() === '')) {
+    return null;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 export class UnifiClient {
@@ -143,7 +156,9 @@ export class UnifiClient {
     if (!Array.isArray(data)) {
       throw new Error('Unexpected response from UniFi health endpoint');
     }
-    const wan = (data as Array<Record<string, unknown>>).find((d) => d?.subsystem === 'wan');
+    const subsystems = data as Array<Record<string, unknown>>;
+    const wan = subsystems.find((d) => d?.subsystem === 'wan');
+    const www = subsystems.find((d) => d?.subsystem === 'www');
     if (!wan) {
       throw new Error(`WAN subsystem not found in health data for site "${this.config.site}"`);
     }
@@ -154,6 +169,7 @@ export class UnifiClient {
       downloadMbps: (rate(wan['rx_bytes-r']) * 8) / 1_000_000,
       uploadMbps: (rate(wan['tx_bytes-r']) * 8) / 1_000_000,
       isOnline: wan.status === 'ok',
+      latencyMs: latency(www?.latency),
     };
   }
 
