@@ -82,7 +82,7 @@ export class UnifiClient {
     this.loggedIn = false;
   }
 
-  private loginFailed(err: unknown): never {
+  private loginFailed(err: unknown, what = 'login failed'): never {
     this.clearSession();
     this.loginFailures++;
     // UniFi OS rate-limits logins (HTTP 429); back off exponentially instead of retrying every poll.
@@ -90,7 +90,7 @@ export class UnifiClient {
     const backoff = Math.min(MIN_LOGIN_BACKOFF_MS * 2 ** (this.loginFailures - 1), MAX_LOGIN_BACKOFF_MS);
     const wait = Number.isFinite(retryAfter) && retryAfter > backoff ? retryAfter : backoff;
     this.nextLoginAt = Date.now() + wait;
-    throw new Error(`UniFi login failed (${describe(err)}); retrying in ${Math.round(wait / 1000)}s`);
+    throw new Error(`UniFi ${what} (${describe(err)}); retrying in ${Math.round(wait / 1000)}s`);
   }
 
   async login(): Promise<void> {
@@ -122,7 +122,6 @@ export class UnifiClient {
       }
     }
     this.loggedIn = true;
-    this.loginFailures = 0;
     this.nextLoginAt = 0;
   }
 
@@ -148,6 +147,9 @@ export class UnifiClient {
     if (!wan) {
       throw new Error(`WAN subsystem not found in health data for site "${this.config.site}"`);
     }
+    // Reset login backoff only once the session actually works, so a login that succeeds but
+    // is then rejected still backs off exponentially.
+    this.loginFailures = 0;
     return {
       downloadMbps: (rate(wan['rx_bytes-r']) * 8) / 1_000_000,
       uploadMbps: (rate(wan['tx_bytes-r']) * 8) / 1_000_000,
@@ -173,6 +175,11 @@ export class UnifiClient {
       try {
         return await this.fetchHealth();
       } catch (retryErr) {
+        const retryStatus = statusOf(retryErr);
+        if (retryStatus === 401 || retryStatus === 403) {
+          // A fresh session is still rejected: back off instead of logging in again every poll.
+          this.loginFailed(retryErr, 'stats request rejected after re-login');
+        }
         throw new Error(`UniFi stats request failed after re-login (${describe(retryErr)})`);
       }
     }

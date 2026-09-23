@@ -27,6 +27,7 @@ before(async () => {
     if (req.url === '/api/login') { res.writeHead(200, { 'set-cookie': 'unifises=x' }); return res.end('{}'); }
     if (req.url.endsWith('/stat/health')) {
       if (mode === 'redirect') { res.writeHead(302, { location: 'https://example.com/' }); return res.end(); }
+      if (mode === 'forbidden') { res.writeHead(403); return res.end(); }
       if (!/TOKEN=abc|unifises=x/.test(req.headers.cookie || '')) { res.writeHead(401); return res.end(); }
       const wan = mode === 'offline'
         ? { subsystem: 'wan', status: 'error' }
@@ -99,6 +100,14 @@ test('expired session re-logs in exactly once', async () => {
   await c.getWanStats();
   c.cookie = 'TOKEN=stale';
   assert.equal((await c.getWanStats()).isOnline, true);
+  assert.equal(hits['/api/auth/login'], 2);
+});
+
+test('session rejected after re-login backs off instead of logging in every poll', async () => {
+  mode = 'forbidden';
+  const c = client();
+  assert.match((await errorOf(c.getWanStats())).message, /rejected after re-login \(HTTP 403\); retrying in 30s/);
+  assert.match((await errorOf(c.getWanStats())).message, /backing off/);
   assert.equal(hits['/api/auth/login'], 2);
 });
 
