@@ -105,6 +105,18 @@ https://192.168.1.1/network/default/dashboard
 
 -----
 
+### Plugin icon in Homebridge UI (local patch)
+
+Homebridge UI only shows icons for plugins on the official `homebridge/plugins` list, so this plugin normally gets the default purple tile. To show `images/icon.png` locally, patch the UI (re-run after every Homebridge UI update):
+
+```bash
+sudo ~/homebridge-unifi-network-stats/tools/patch-homebridge-ui-icon.sh && sudo hb-service restart
+# undo:
+sudo ~/homebridge-unifi-network-stats/tools/patch-homebridge-ui-icon.sh --revert && sudo hb-service restart
+```
+
+-----
+
 ## Troubleshooting
 
 **Accessories don’t appear in Home app**
