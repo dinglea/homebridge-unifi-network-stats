@@ -1,15 +1,17 @@
 <div align="center">
 
+<img src="https://raw.githubusercontent.com/dinglea/homebridge-unifi-network-stats/main/images/homebridge-unifi-network-stats.svg" alt="homebridge-unifi-network-stats logo" width="160">
+
 # homebridge-unifi-network-stats
 
 **Live UniFi WAN speed and status in HomeKit — updated every 5 seconds.**
 
-[![npm version](https://img.shields.io/npm/v/homebridge-unifi-network-stats?color=00d4ff&style=flat-square)](https://www.npmjs.com/package/homebridge-unifi-network-stats)
-[![Homebridge](https://img.shields.io/badge/homebridge-%E2%89%A51.6.0-blueviolet?style=flat-square)](https://homebridge.io)
-[![Node](https://img.shields.io/badge/node-%E2%89%A518-green?style=flat-square)](https://nodejs.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/homebridge-unifi-network-stats?color=16B865&style=flat-square)](https://www.npmjs.com/package/homebridge-unifi-network-stats)
+[![Homebridge](https://img.shields.io/badge/homebridge-%E2%89%A51.6.0-16B865?style=flat-square)](https://homebridge.io)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-16B865?style=flat-square)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-16B865?style=flat-square)](LICENSE)
 
-Connects your self-hosted **UniFi Network Controller** to HomeKit via Homebridge.
+Connects your **UniFi OS console** (UDM, UCG, UXG…) or self-hosted **UniFi Network Application** to HomeKit via Homebridge.
 No cloud. No polling fees. Pure local API.
 
 </div>
@@ -34,8 +36,8 @@ No cloud. No polling fees. Pure local API.
 ## Requirements
 
 - Raspberry Pi (or any machine) running [Homebridge](https://homebridge.io) with **Node.js ≥ 18**
-- Self-hosted **UniFi Network Application** (v7+ recommended), default port `8443`
-- A UniFi account with **Read Only** administrator access is sufficient
+- A **UniFi OS console** (port `443`), or a self-hosted **UniFi Network Application** (v7+ recommended, port `8443`)
+- A local UniFi account with at least **View Only** access to the **Network** app
 - Homebridge and your UniFi controller must be on the **same local network**
 
 -----
@@ -69,8 +71,8 @@ Paste this into the `"platforms"` array of your Homebridge `config.json`:
 {
   "platform": "UnifiNetworkStats",
   "name": "UniFi Network Stats",
-  "host": "192.168.1.10",
-  "port": 8443,
+  "host": "192.168.1.1",
+  "port": 443,
   "username": "your-unifi-username",
   "password": "your-unifi-password",
   "site": "default",
@@ -83,8 +85,8 @@ Paste this into the `"platforms"` array of your Homebridge `config.json`:
 
 |Key                 |Type   |Default    |Required|Description                                        |
 |--------------------|-------|-----------|--------|---------------------------------------------------|
-|`host`              |string |—          |✅       |IP or hostname of your UniFi Network Controller    |
-|`port`              |number |`8443`     |—       |HTTPS port. Self-hosted uses `8443` by default     |
+|`host`              |string |—          |✅       |IP or hostname of your UniFi console or controller |
+|`port`              |number |`443`      |—       |`443` for UniFi OS consoles, `8443` for self-hosted|
 |`username`          |string |—          |✅       |UniFi account username                             |
 |`password`          |string |—          |✅       |UniFi account password                             |
 |`site`              |string |`"default"`|—       |Site name — visible in the controller URL          |
@@ -93,12 +95,12 @@ Paste this into the `"platforms"` array of your Homebridge `config.json`:
 
 ### Finding your site name
 
-Log into your UniFi controller. The site name is in the URL:
+Log into UniFi Network. The site name is in the URL (`default` for most setups):
 
 ```
-https://192.168.1.10:8443/manage/site/default/dashboard
-                                        ^^^^^^^
-                                        this is your site name
+https://192.168.1.1/network/default/dashboard
+                            ^^^^^^^
+                            this is your site name
 ```
 
 -----
@@ -106,13 +108,16 @@ https://192.168.1.10:8443/manage/site/default/dashboard
 ## Troubleshooting
 
 **Accessories don’t appear in Home app**
-Check the Homebridge log for the line `Successfully logged in to UniFi controller`. If missing, your host/port/credentials are likely wrong.
+Check the Homebridge log for `Logged in to UniFi OS console` (or `Logged in to self-hosted UniFi controller`). If missing, your host/port/credentials are likely wrong.
 
 **`ECONNREFUSED` error**
-Confirm the controller is reachable: open `https://<HOST>:8443` in a browser from the same network as your Pi.
+Confirm the controller is reachable: open `https://<HOST>:<PORT>` in a browser from the same network as your Pi.
 
 **`UNABLE_TO_VERIFY_LEAF_SIGNATURE` error**
-Make sure `rejectUnauthorized` is set to `false`. Self-hosted controllers use self-signed certificates by default.
+Make sure `rejectUnauthorized` is set to `false`. UniFi consoles and self-hosted controllers use self-signed certificates by default.
+
+**`HTTP 429` / login backing off**
+UniFi OS rate-limits logins. The plugin backs off (30 s, doubling up to 10 min) instead of retrying every poll; it recovers on its own.
 
 **WAN subsystem not found**
 Double-check the `site` field. Log into your controller and look at the URL — the site name is case-sensitive.

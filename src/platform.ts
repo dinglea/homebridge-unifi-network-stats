@@ -19,22 +19,31 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
       throw new Error('UniFi Network Stats: host, username and password are required.');
     }
     this.client = new UnifiClient({
-      host: config.host, port: config.port ?? 443,
+      host: String(config.host).trim(), port: Number(config.port ?? 443),
       username: config.username, password: config.password,
       site: config.site ?? 'default', rejectUnauthorized: config.rejectUnauthorized ?? false,
     }, log);
     this.download = new SpeedSensorAccessory(log, api, 'WAN Download Speed', 'download');
     this.upload = new SpeedSensorAccessory(log, api, 'WAN Upload Speed', 'upload');
     this.wan = new WanStatusAccessory(log, api, 'WAN Status');
-    const interval = Math.max(config.pollInterval ?? 5, 5);
+    const requested = Number(config.pollInterval ?? 5);
+    const interval = Number.isFinite(requested) ? Math.max(requested, 5) : 5;
+    let polling = false;
     const poll = async () => {
+      // Skip a tick rather than stacking requests (and logins) when UniFi is slow.
+      if (polling) {
+        return;
+      }
+      polling = true;
       try {
         const s = await this.client.getWanStats();
         this.download.updateSpeed(s.downloadMbps);
         this.upload.updateSpeed(s.uploadMbps);
         this.wan.updateStatus(s.isOnline);
       } catch (err) {
-        log.error(`Failed to fetch UniFi stats: ${err}`);
+        log.error(`Failed to fetch UniFi stats: ${err instanceof Error ? err.message : err}`);
+      } finally {
+        polling = false;
       }
     };
     api.on('didFinishLaunching', () => {
