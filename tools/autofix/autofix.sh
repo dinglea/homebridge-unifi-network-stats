@@ -164,7 +164,7 @@ if [[ $SKIP_CLAUDE -ne 1 && -x $CLAUDE ]]; then
   set +e
   as_user timeout "$CLAUDE_TIMEOUT" "$CLAUDE" -p "$(cat "$LIB/review-prompt.md")" \
     --permission-mode dontAsk \
-    --allowedTools "Edit(src/**)" "Write(src/**)" "Edit(test/**)" "Write(test/**)" "Bash(npm run build)" "Bash(npm test)" \
+    --allowedTools "Edit(src/**)" "Edit(test/**)" "Bash(npm run build)" "Bash(npm test)" \
     --output-format text > "$RUN_DIR/claude.txt" 2>&1
   rc=$?
   set -e
