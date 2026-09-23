@@ -123,6 +123,7 @@ set -e
 SUMMARY=$(sed -n '/^## Summary/,$p' "$RUN_DIR/claude.txt" | tail -n +2 | sed '/^[[:space:]]*$/d')
 TITLE=$(head -1 <<<"$SUMMARY" | sed 's/^[#*[:space:]-]*//' | cut -c1-80)
 [[ -n $TITLE ]] || TITLE="Nightly feature update"
+SUMMARY=$(tail -n +2 <<<"$SUMMARY")   # body without the title line
 
 CHANGED=$(as_user git status --porcelain --untracked-files=all | awk '{print $NF}' | grep -v '^\.unifi-samples/' || true)
 UNEXPECTED=$(grep -vE '^(src/|test/|README\.md$|config\.schema\.json$|docs/FEATURE_LOG\.md$)' <<<"$CHANGED" || true)
