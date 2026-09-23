@@ -4,12 +4,13 @@
 # Run as root by homebridge-plugin-autofix.service (installed by install.sh, which copies
 # this file to a root-owned location — never run it as root from the user-writable repo).
 #
-#   1. Skip if the repo has uncommitted work; fast-forward from GitHub.
-#   2. npm audit fix, then a headless Claude Code security review of src/ (as REPO_USER,
-#      edits limited to src/ and test/).
-#   3. If anything changed: build + tests must pass, bump patch version, pack, install into
-#      Homebridge, restart, and confirm the new version logs in to UniFi.
-#   4. On success commit + push. On any failure roll back the install and the repo.
+#   1. Pull: skip if the repo has uncommitted work; fast-forward to the latest from GitHub.
+#   2. Check: npm audit fix, then a headless Claude Code security review of src/ (as
+#      REPO_USER, edits limited to src/ and test/); build + tests must pass.
+#   3. Deploy if the check fixed anything OR the pulled code isn't what Homebridge is running:
+#      bump the patch version if needed, pack, install, restart, confirm it logs in to UniFi.
+#   4. Push: commit the fixes / version bump and push. Any failure rolls back the install and
+#      the local repo (pulled commits stay; they are already on GitHub).
 #
 # Env overrides (for manual runs):
 #   DRY_RUN=1            find/fix/test only; no install, commit or push; repo reset afterwards
@@ -63,6 +64,7 @@ git_auth() {
 redact() { sed -E 's/(github_pat_|ghp_)[A-Za-z0-9_]+/<token>/g'; }
 
 BASE= ROLLBACK_TGZ= DEPLOYED=0
+version_gt() { as_user node -e 'const [a,b]=process.argv.slice(1).map(v=>String(v).split(".").map(Number));for(let i=0;i<3;i++){if((a[i]||0)!==(b[i]||0))process.exit((a[i]||0)>(b[i]||0)?0:1)}process.exit(1)' "$1" "$2"; }
 restore_repo() {
   [[ -n $BASE ]] || return 0
   log "Resetting repo to $BASE"
@@ -116,10 +118,26 @@ if [[ -n $(as_user git status --porcelain) ]]; then
   exit 0
 fi
 [[ $(as_user git rev-parse --abbrev-ref HEAD) == "$BRANCH" ]] || fail "repo not on $BRANCH"
+BEFORE_PULL=$(as_user git rev-parse HEAD)
 git_auth fetch -q origin "$BRANCH" 2>&1 | redact
 as_user git merge -q --ff-only "origin/$BRANCH" || fail "local $BRANCH has diverged from origin"
 BASE=$(as_user git rev-parse HEAD)
-log "Base commit $BASE"
+log "Pulled $(as_user git rev-list --count "$BEFORE_PULL..$BASE") new commit(s); base $BASE"
+
+# What is Homebridge actually running, relative to the pulled code?
+HEAD_VERSION=$(as_user node -p 'require("./package.json").version')
+INSTALLED_VERSION=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$HB_DIR/node_modules/$PLUGIN/package.json" 2>/dev/null | head -1 || true)
+DEPLOYED_COMMIT=$(cat "$STATE/deployed-commit" 2>/dev/null || true)
+if [[ -z $DEPLOYED_COMMIT && $INSTALLED_VERSION == "$HEAD_VERSION" ]]; then
+  DEPLOYED_COMMIT=$BASE; echo "$BASE" > "$STATE/deployed-commit"   # first run: assume current install matches
+fi
+PULLED_CHANGES=0
+if [[ $INSTALLED_VERSION != "$HEAD_VERSION" ]]; then
+  PULLED_CHANGES=1
+elif [[ $DEPLOYED_COMMIT != "$BASE" ]] && ! as_user git diff --quiet "$DEPLOYED_COMMIT" "$BASE" -- src package.json package-lock.json 2>/dev/null; then
+  PULLED_CHANGES=1
+fi
+log "Installed v${INSTALLED_VERSION:-none}, repo v$HEAD_VERSION; pulled code needs deploying: $([[ $PULLED_CHANGES -eq 1 ]] && echo yes || echo no)"
 if [[ -n $(as_user git rev-list "origin/$BRANCH..HEAD") ]]; then
   log "Pushing commits left unpushed by an earlier run"
   git_auth push -q origin "$BRANCH" 2>&1 | redact || log "Push still failing; continuing"
@@ -161,8 +179,10 @@ fi
 UNEXPECTED=$(as_user git status --porcelain | awk '{print $NF}' | grep -vE '^(src/|test/|package\.json$|package-lock\.json$)' || true)
 [[ -z $UNEXPECTED ]] || fail "unexpected files changed: $(echo $UNEXPECTED)"
 
-if [[ -z $(as_user git status --porcelain) && $FORCE -ne 1 ]]; then
-  log "No changes needed."
+FIXED=0
+[[ -z $(as_user git status --porcelain) ]] || FIXED=1
+if [[ $FIXED -eq 0 && $PULLED_CHANGES -eq 0 && $FORCE -ne 1 ]]; then
+  log "No fixes needed and Homebridge is already running the latest code."
   "$LIB/patch-homebridge-ui-icon.sh" | grep -q '^Patched' && { log "Re-applied Homebridge UI icon patch"; hb-service restart >/dev/null 2>&1; } || true
   echo "OK $RUN_ID: no changes (audit $AUDIT_AFTER)" > "$STATE/last-status"
   exit 0
@@ -170,7 +190,7 @@ fi
 as_user git status --porcelain | sed 's/^/[autofix]   /'
 
 # --- 3. Verify ---------------------------------------------------------------------------
-as_user npm test > "$RUN_DIR/test.txt" 2>&1 || fail "build/tests failed after fixes (see $RUN_DIR/test.txt)"
+as_user npm test > "$RUN_DIR/test.txt" 2>&1 || fail "build/tests failed (see $RUN_DIR/test.txt); not deploying"
 log "Build and tests pass"
 
 if [[ $DRY_RUN -eq 1 ]]; then
@@ -182,7 +202,12 @@ if [[ $DRY_RUN -eq 1 ]]; then
 fi
 
 # --- 4. Deploy ---------------------------------------------------------------------------
-NEW=$(as_user npm version patch --no-git-tag-version | tr -d v)
+# Bump only when needed: new fixes, or the pulled version isn't newer than what's installed.
+if [[ $FIXED -eq 1 || -z $INSTALLED_VERSION ]] || ! version_gt "$HEAD_VERSION" "$INSTALLED_VERSION"; then
+  NEW=$(as_user npm version patch --no-git-tag-version | tr -d v)
+else
+  NEW=$HEAD_VERSION
+fi
 as_user rm -rf dist
 as_user npm run build >/dev/null
 TGZ_NAME=$(as_user npm pack --silent | tail -1)
@@ -210,9 +235,16 @@ DEPLOYED=0   # healthy: nothing to roll back from here on
 
 # --- 5. Commit and push ------------------------------------------------------------------
 as_user git add -A
+if as_user git diff --cached --quiet; then
+  echo "$BASE" > "$STATE/deployed-commit"
+  log "Deployed pulled v$NEW as-is; nothing to commit."
+  echo "OK $RUN_ID: deployed pulled v$NEW" > "$STATE/last-status"
+  exit 0
+fi
 as_user git -c user.name="$REPO_USER" -c user.email="126807053+$REPO_USER@users.noreply.github.com" commit -q -F - <<EOF
-Automated security fixes (v$NEW)
+Automated security check and deploy (v$NEW)
 
+Checked and deployed: $(as_user git log -1 --format='%h %s' "$BASE")
 npm audit: $AUDIT_BEFORE -> $AUDIT_AFTER
 
 Claude Code review:
@@ -222,6 +254,7 @@ Run: $RUN_ID
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
+as_user git rev-parse HEAD > "$STATE/deployed-commit"
 BASE=   # committed: don't reset if the push fails; next run will push it
 if git_auth push -q origin "$BRANCH" 2>&1 | redact; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
   log "Pushed $(as_user git rev-parse --short HEAD) to origin/$BRANCH"
