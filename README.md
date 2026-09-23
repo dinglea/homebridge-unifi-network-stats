@@ -6,10 +6,10 @@
 
 **Live UniFi WAN speed and status in HomeKit — updated every 5 seconds.**
 
-[![npm version](https://img.shields.io/npm/v/homebridge-unifi-network-stats?color=16B865&style=flat-square)](https://www.npmjs.com/package/homebridge-unifi-network-stats)
-[![Homebridge](https://img.shields.io/badge/homebridge-%E2%89%A51.6.0-16B865?style=flat-square)](https://homebridge.io)
-[![Node](https://img.shields.io/badge/node-%E2%89%A518-16B865?style=flat-square)](https://nodejs.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-16B865?style=flat-square)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/homebridge-unifi-network-stats?color=006FFF&style=flat-square)](https://www.npmjs.com/package/homebridge-unifi-network-stats)
+[![Homebridge](https://img.shields.io/badge/homebridge-%E2%89%A51.6.0-006FFF?style=flat-square)](https://homebridge.io)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-006FFF?style=flat-square)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-006FFF?style=flat-square)](LICENSE)
 
 Connects your **UniFi OS console** (UDM, UCG, UXG…) or self-hosted **UniFi Network Application** to HomeKit via Homebridge.
 No cloud. No polling fees. Pure local API.
