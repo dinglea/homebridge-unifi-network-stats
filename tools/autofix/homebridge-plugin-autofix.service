@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily security autofix for homebridge-unifi-network-stats
+After=network-online.target homebridge.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/homebridge-plugin-autofix/autofix.sh
+TimeoutStartSec=1h
+Nice=10
