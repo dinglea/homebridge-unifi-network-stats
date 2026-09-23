@@ -33,7 +33,8 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
       this.latency = new LatencySensorAccessory(log, api, 'WAN Latency');
     }
     const requested = Number(config.pollInterval ?? 5);
-    const interval = Number.isFinite(requested) ? Math.max(requested, 5) : 5;
+    // Node treats setInterval delays above 2^31-1 ms as 1 ms, which would hammer the console.
+    const interval = Number.isFinite(requested) ? Math.min(Math.max(requested, 5), 2_147_483) : 5;
     let polling = false;
     const poll = async () => {
       // Skip a tick rather than stacking requests (and logins) when UniFi is slow.

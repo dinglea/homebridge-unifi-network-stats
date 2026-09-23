@@ -39,6 +39,22 @@ test('showLatency adds a WAN Latency light sensor after the existing accessories
   assert.ok(found[3].getServices().some((s) => s.UUID === hap.Service.LightSensor.UUID));
 });
 
+test('huge pollInterval is capped so setInterval does not fire every 1 ms', () => {
+  let launch;
+  const delays = [];
+  const saved = global.setInterval;
+  global.setInterval = (fn, ms) => { delays.push(ms); };
+  try {
+    // Port 1 on loopback refuses immediately; the first poll's error is caught and logged.
+    new UnifiNetworkStatsPlatform(log, { ...base, port: 1, pollInterval: 1e10 }, { hap, on: (e, cb) => { launch = cb; } });
+    launch();
+  } finally {
+    global.setInterval = saved;
+  }
+  assert.equal(delays.length, 1);
+  assert.ok(delays[0] >= 5000 && delays[0] <= 2 ** 31 - 1, String(delays[0]));
+});
+
 test('latency sensor shows ms as lux, clamps to the HomeKit range, keeps last value on null', () => {
   const a = new LatencySensorAccessory(log, api, 'WAN Latency');
   a.updateLatency(13);
