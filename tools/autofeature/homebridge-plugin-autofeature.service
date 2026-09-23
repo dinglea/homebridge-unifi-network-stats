@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly feature research for homebridge-unifi-network-stats (opens a pull request)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/homebridge-plugin-autofix/autofeature.sh
+TimeoutStartSec=1h
+Nice=10

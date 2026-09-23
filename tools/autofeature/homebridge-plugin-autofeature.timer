@@ -1,0 +1,10 @@
+[Unit]
+Description=Run homebridge-unifi-network-stats feature research daily at 02:30 (before the 03:30 security job)
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
