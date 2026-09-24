@@ -3,11 +3,12 @@ import { UnifiClient } from './unifiClient';
 import { SpeedSensorAccessory } from './speedSensorAccessory';
 import { WanStatusAccessory } from './wanStatusAccessory';
 import { LatencySensorAccessory } from './latencySensorAccessory';
+import { SpeedTestSensorAccessory } from './speedTestSensorAccessory';
 
 interface Cfg extends PlatformConfig {
   host: string; port?: number; username: string; password: string;
   site?: string; pollInterval?: number; rejectUnauthorized?: boolean;
-  showLatency?: boolean;
+  showLatency?: boolean; showSpeedTest?: boolean;
 }
 
 export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
@@ -16,6 +17,8 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
   private readonly upload: SpeedSensorAccessory;
   private readonly wan: WanStatusAccessory;
   private readonly latency?: LatencySensorAccessory;
+  private readonly speedTestDown?: SpeedTestSensorAccessory;
+  private readonly speedTestUp?: SpeedTestSensorAccessory;
 
   constructor(public readonly log: Logger, public readonly config: Cfg, public readonly api: API) {
     if (!config.host || !config.username || !config.password) {
@@ -31,6 +34,10 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
     this.wan = new WanStatusAccessory(log, api, 'WAN Status');
     if (config.showLatency === true) {
       this.latency = new LatencySensorAccessory(log, api, 'WAN Latency');
+    }
+    if (config.showSpeedTest === true) {
+      this.speedTestDown = new SpeedTestSensorAccessory(log, api, 'Speed Test Download', 'download');
+      this.speedTestUp = new SpeedTestSensorAccessory(log, api, 'Speed Test Upload', 'upload');
     }
     const requested = Number(config.pollInterval ?? 5);
     // Node treats setInterval delays above 2^31-1 ms as 1 ms, which would hammer the console.
@@ -48,6 +55,8 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
         this.upload.updateSpeed(s.uploadMbps);
         this.wan.updateStatus(s.isOnline);
         this.latency?.updateLatency(s.latencyMs);
+        this.speedTestDown?.updateSpeed(s.speedTestDownMbps);
+        this.speedTestUp?.updateSpeed(s.speedTestUpMbps);
       } catch (err) {
         log.error(`Failed to fetch UniFi stats: ${err instanceof Error ? err.message : err}`);
       } finally {
@@ -65,6 +74,9 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
     const found: AccessoryPlugin[] = [this.download, this.upload, this.wan];
     if (this.latency) {
       found.push(this.latency);
+    }
+    if (this.speedTestDown && this.speedTestUp) {
+      found.push(this.speedTestDown, this.speedTestUp);
     }
     callback(found);
   }
