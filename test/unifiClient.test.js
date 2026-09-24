@@ -33,8 +33,8 @@ before(async () => {
         ? { subsystem: 'wan', status: 'error' }
         : { subsystem: 'wan', 'rx_bytes-r': mode === 'garbage' ? 'NaN' : 12500000, 'tx_bytes-r': 1250000, status: 'ok' };
       const www = mode === 'offline' ? { subsystem: 'www', status: 'error' }
-        : mode === 'garbage' ? { subsystem: 'www', status: 'ok', latency: null }
-          : { subsystem: 'www', status: 'ok', latency: 13, uptime: 1072944 };
+        : mode === 'garbage' ? { subsystem: 'www', status: 'ok', latency: null, xput_down: 'n/a', xput_up: -1 }
+          : { subsystem: 'www', status: 'ok', latency: 13, uptime: 1072944, xput_down: 955, xput_up: '957.5' };
       const data = mode === 'nowan' ? [{ subsystem: 'lan' }] : mode === 'nowww' ? [wan] : [wan, www];
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ data }));
@@ -60,7 +60,9 @@ async function errorOf(p) {
 
 test('UniFi OS login and WAN stats', async () => {
   mode = 'ok';
-  assert.deepEqual(await client().getWanStats(), { downloadMbps: 100, uploadMbps: 10, isOnline: true, latencyMs: 13 });
+  assert.deepEqual(await client().getWanStats(), {
+    downloadMbps: 100, uploadMbps: 10, isOnline: true, latencyMs: 13, speedTestDownMbps: 955, speedTestUpMbps: 957.5,
+  });
 });
 
 test('latency is null when UniFi reports none', async () => {
@@ -69,7 +71,15 @@ test('latency is null when UniFi reports none', async () => {
   }
 });
 
-test('latency adds no requests to the poll', async () => {
+test('speed test results are null when UniFi reports none or garbage', async () => {
+  for (mode of ['offline', 'garbage', 'nowww']) {
+    const s = await client().getWanStats();
+    assert.equal(s.speedTestDownMbps, null, mode);
+    assert.equal(s.speedTestUpMbps, null, mode);
+  }
+});
+
+test('latency and speed test results add no requests to the poll', async () => {
   mode = 'ok';
   const c = client();
   await c.getWanStats();

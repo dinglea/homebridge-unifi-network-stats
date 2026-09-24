@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const hap = require('@homebridge/hap-nodejs');
 const { UnifiNetworkStatsPlatform } = require('../dist/platform');
 const { LatencySensorAccessory } = require('../dist/latencySensorAccessory');
+const { SpeedTestSensorAccessory } = require('../dist/speedTestSensorAccessory');
 
 const log = { info() {}, debug() {}, warn() {}, error() {} };
 const api = { hap, on() {} };
@@ -37,6 +38,33 @@ test('showLatency adds a WAN Latency light sensor after the existing accessories
   assert.deepEqual(found.map((a) => a.name), ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'WAN Latency']);
   assert.equal(serial(found[3]), 'unifi-wan-latency');
   assert.ok(found[3].getServices().some((s) => s.UUID === hap.Service.LightSensor.UUID));
+});
+
+test('showSpeedTest adds download and upload speed test light sensors after the existing accessories', () => {
+  const found = accessories({ showSpeedTest: true });
+  assert.deepEqual(found.map((a) => a.name),
+    ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'Speed Test Download', 'Speed Test Upload']);
+  assert.deepEqual(found.map(serial),
+    ['unifi-download-speed', 'unifi-upload-speed', 'unifi-wan-status', 'unifi-speedtest-download', 'unifi-speedtest-upload']);
+  assert.ok(found.slice(3).every((a) => a.getServices().some((s) => s.UUID === hap.Service.LightSensor.UUID)));
+});
+
+test('showLatency and showSpeedTest together keep a stable order', () => {
+  const found = accessories({ showLatency: true, showSpeedTest: true });
+  assert.deepEqual(found.map((a) => a.name),
+    ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'WAN Latency', 'Speed Test Download', 'Speed Test Upload']);
+});
+
+test('speed test sensor shows Mbps as lux, clamps to the HomeKit range, keeps last value on null', () => {
+  const a = new SpeedTestSensorAccessory(log, api, 'Speed Test Download', 'download');
+  a.updateSpeed(955);
+  assert.equal(lux(a), 955);
+  a.updateSpeed(null);
+  assert.equal(lux(a), 955);
+  a.updateSpeed(0);
+  assert.equal(lux(a), 0.0001);
+  a.updateSpeed(1e9);
+  assert.equal(lux(a), 100000);
 });
 
 test('huge pollInterval is capped so setInterval does not fire every 1 ms', () => {

@@ -11,6 +11,9 @@ export interface WanStats {
   downloadMbps: number; uploadMbps: number; isOnline: boolean;
   /** Internet latency from the "www" health subsystem, or null when UniFi doesn't report one. */
   latencyMs: number | null;
+  /** Last UniFi speed test result ("www" xput_down/xput_up, Mbps), or null when not reported. */
+  speedTestDownMbps: number | null;
+  speedTestUpMbps: number | null;
 }
 
 const MIN_LOGIN_BACKOFF_MS = 30_000;
@@ -36,7 +39,8 @@ function rate(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-function latency(value: unknown): number | null {
+/** An optional non-negative reading (latency, speed test result), or null when absent or invalid. */
+function reading(value: unknown): number | null {
   // Number(null) and Number('') are 0, so require an actual number or numeric string.
   if (typeof value !== 'number' && (typeof value !== 'string' || value.trim() === '')) {
     return null;
@@ -169,7 +173,9 @@ export class UnifiClient {
       downloadMbps: (rate(wan['rx_bytes-r']) * 8) / 1_000_000,
       uploadMbps: (rate(wan['tx_bytes-r']) * 8) / 1_000_000,
       isOnline: wan.status === 'ok',
-      latencyMs: latency(www?.latency),
+      latencyMs: reading(www?.latency),
+      speedTestDownMbps: reading(www?.xput_down),
+      speedTestUpMbps: reading(www?.xput_up),
     };
   }
 

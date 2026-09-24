@@ -26,6 +26,7 @@ No cloud. No polling fees. Pure local API.
 |**WAN Upload Speed**  |Light Sensor  |Current upload in Mbps                   |
 |**WAN Status**        |Contact Sensor|Online → Closed / Offline → Open         |
 |**WAN Latency** *(optional)*|Light Sensor|Internet latency in ms (1 ms = 1 lux); enable with `showLatency`|
+|**Speed Test Download** / **Speed Test Upload** *(optional)*|Light Sensor|Result of UniFi's last speed test in Mbps (1 Mbps = 1 lux); enable with `showSpeedTest`|
 
 
 > **Why Light Sensor?** HomeKit has no generic numeric sensor type. Light Sensor accepts floating-point values, displays beautifully in the Home app, and works in automations — making it the best available proxy for a speed readout.
@@ -94,6 +95,7 @@ Paste this into the `"platforms"` array of your Homebridge `config.json`:
 |`pollInterval`      |number |`5`        |—       |Seconds between stat fetches. Minimum: `5`         |
 |`rejectUnauthorized`|boolean|`false`    |—       |Set `true` only if using a valid CA-signed SSL cert|
 |`showLatency`       |boolean|`false`    |—       |Add a **WAN Latency** sensor (ms shown as lux). Keeps its last value while UniFi reports no latency (e.g. offline)|
+|`showSpeedTest`     |boolean|`false`    |—       |Add **Speed Test Download** and **Speed Test Upload** sensors (Mbps shown as lux) with the result of UniFi's last speed test. They only change when UniFi runs a test (schedule it in UniFi Network), and keep their last value while no result is reported|
 
 ### Finding your site name
 
