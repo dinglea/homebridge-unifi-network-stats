@@ -14,6 +14,8 @@ export interface WanStats {
   /** Last UniFi speed test result ("www" xput_down/xput_up, Mbps), or null when not reported. */
   speedTestDownMbps: number | null;
   speedTestUpMbps: number | null;
+  /** Connected clients (users + guests on the "wlan" and "lan" subsystems), or null when not reported. */
+  clientCount: number | null;
 }
 
 const MIN_LOGIN_BACKOFF_MS = 30_000;
@@ -47,6 +49,13 @@ function reading(value: unknown): number | null {
   }
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Sum of num_user and num_guest over the given subsystems, or null when none of them reports a count. */
+function clients(subsystems: Array<Record<string, unknown> | undefined>): number | null {
+  const counts = subsystems.flatMap((s) => [reading(s?.num_user), reading(s?.num_guest)])
+    .filter((n): n is number => n !== null);
+  return counts.length ? Math.round(counts.reduce((a, b) => a + b, 0)) : null;
 }
 
 export class UnifiClient {
@@ -176,6 +185,10 @@ export class UnifiClient {
       latencyMs: reading(www?.latency),
       speedTestDownMbps: reading(www?.xput_down),
       speedTestUpMbps: reading(www?.xput_up),
+      clientCount: clients([
+        subsystems.find((d) => d?.subsystem === 'wlan'),
+        subsystems.find((d) => d?.subsystem === 'lan'),
+      ]),
     };
   }
 

@@ -4,11 +4,12 @@ import { SpeedSensorAccessory } from './speedSensorAccessory';
 import { WanStatusAccessory } from './wanStatusAccessory';
 import { LatencySensorAccessory } from './latencySensorAccessory';
 import { SpeedTestSensorAccessory } from './speedTestSensorAccessory';
+import { ClientCountSensorAccessory } from './clientCountSensorAccessory';
 
 interface Cfg extends PlatformConfig {
   host: string; port?: number; username: string; password: string;
   site?: string; pollInterval?: number; rejectUnauthorized?: boolean;
-  showLatency?: boolean; showSpeedTest?: boolean;
+  showLatency?: boolean; showSpeedTest?: boolean; showClientCount?: boolean;
 }
 
 export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
@@ -19,6 +20,7 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
   private readonly latency?: LatencySensorAccessory;
   private readonly speedTestDown?: SpeedTestSensorAccessory;
   private readonly speedTestUp?: SpeedTestSensorAccessory;
+  private readonly clientCount?: ClientCountSensorAccessory;
 
   constructor(public readonly log: Logger, public readonly config: Cfg, public readonly api: API) {
     if (!config.host || !config.username || !config.password) {
@@ -39,6 +41,9 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
       this.speedTestDown = new SpeedTestSensorAccessory(log, api, 'Speed Test Download', 'download');
       this.speedTestUp = new SpeedTestSensorAccessory(log, api, 'Speed Test Upload', 'upload');
     }
+    if (config.showClientCount === true) {
+      this.clientCount = new ClientCountSensorAccessory(log, api, 'Connected Clients');
+    }
     const requested = Number(config.pollInterval ?? 5);
     // Node treats setInterval delays above 2^31-1 ms as 1 ms, which would hammer the console.
     const interval = Number.isFinite(requested) ? Math.min(Math.max(requested, 5), 2_147_483) : 5;
@@ -57,6 +62,7 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
         this.latency?.updateLatency(s.latencyMs);
         this.speedTestDown?.updateSpeed(s.speedTestDownMbps);
         this.speedTestUp?.updateSpeed(s.speedTestUpMbps);
+        this.clientCount?.updateCount(s.clientCount);
       } catch (err) {
         log.error(`Failed to fetch UniFi stats: ${err instanceof Error ? err.message : err}`);
       } finally {
@@ -77,6 +83,9 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
     }
     if (this.speedTestDown && this.speedTestUp) {
       found.push(this.speedTestDown, this.speedTestUp);
+    }
+    if (this.clientCount) {
+      found.push(this.clientCount);
     }
     callback(found);
   }

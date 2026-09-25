@@ -35,7 +35,12 @@ before(async () => {
       const www = mode === 'offline' ? { subsystem: 'www', status: 'error' }
         : mode === 'garbage' ? { subsystem: 'www', status: 'ok', latency: null, xput_down: 'n/a', xput_up: -1 }
           : { subsystem: 'www', status: 'ok', latency: 13, uptime: 1072944, xput_down: 955, xput_up: '957.5' };
-      const data = mode === 'nowan' ? [{ subsystem: 'lan' }] : mode === 'nowww' ? [wan] : [wan, www];
+      const wlan = mode === 'garbage' ? { subsystem: 'wlan', num_user: 'n/a', num_guest: -1 }
+        : { subsystem: 'wlan', num_user: 44, num_guest: 2, num_iot: 2 };
+      const lan = mode === 'garbage' ? { subsystem: 'lan', num_user: null }
+        : { subsystem: 'lan', num_user: '13', num_guest: 0, num_iot: 1 };
+      const data = mode === 'nowan' ? [{ subsystem: 'lan' }] : mode === 'nowww' ? [wan]
+        : mode === 'wlanonly' ? [wan, www, wlan] : [wan, www, wlan, lan];
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ data }));
     }
@@ -62,7 +67,20 @@ test('UniFi OS login and WAN stats', async () => {
   mode = 'ok';
   assert.deepEqual(await client().getWanStats(), {
     downloadMbps: 100, uploadMbps: 10, isOnline: true, latencyMs: 13, speedTestDownMbps: 955, speedTestUpMbps: 957.5,
+    clientCount: 59,
   });
+});
+
+// The 'ok' case above checks 44 + 2 + 13 + 0 = 59: users and guests, but not num_iot (a subset of users).
+test('client count uses whichever of the Wi-Fi and wired subsystems is present', async () => {
+  mode = 'wlanonly';
+  assert.equal((await client().getWanStats()).clientCount, 46);
+});
+
+test('client count is null when UniFi reports none or garbage', async () => {
+  for (mode of ['garbage', 'nowww']) {
+    assert.equal((await client().getWanStats()).clientCount, null, mode);
+  }
 });
 
 test('latency is null when UniFi reports none', async () => {
@@ -79,7 +97,7 @@ test('speed test results are null when UniFi reports none or garbage', async () 
   }
 });
 
-test('latency and speed test results add no requests to the poll', async () => {
+test('latency, speed test results and client count add no requests to the poll', async () => {
   mode = 'ok';
   const c = client();
   await c.getWanStats();
