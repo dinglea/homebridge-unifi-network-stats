@@ -6,6 +6,7 @@ const hap = require('@homebridge/hap-nodejs');
 const { UnifiNetworkStatsPlatform } = require('../dist/platform');
 const { LatencySensorAccessory } = require('../dist/latencySensorAccessory');
 const { SpeedTestSensorAccessory } = require('../dist/speedTestSensorAccessory');
+const { ClientCountSensorAccessory } = require('../dist/clientCountSensorAccessory');
 
 const log = { info() {}, debug() {}, warn() {}, error() {} };
 const api = { hap, on() {} };
@@ -53,6 +54,31 @@ test('showLatency and showSpeedTest together keep a stable order', () => {
   const found = accessories({ showLatency: true, showSpeedTest: true });
   assert.deepEqual(found.map((a) => a.name),
     ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'WAN Latency', 'Speed Test Download', 'Speed Test Upload']);
+});
+
+test('showClientCount adds a Connected Clients light sensor after the existing accessories', () => {
+  const found = accessories({ showClientCount: true });
+  assert.deepEqual(found.map((a) => a.name), ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'Connected Clients']);
+  assert.deepEqual(found.map(serial), ['unifi-download-speed', 'unifi-upload-speed', 'unifi-wan-status', 'unifi-client-count']);
+  assert.ok(found[3].getServices().some((s) => s.UUID === hap.Service.LightSensor.UUID));
+});
+
+test('all optional sensors together keep a stable order', () => {
+  const found = accessories({ showLatency: true, showSpeedTest: true, showClientCount: true });
+  assert.deepEqual(found.map((a) => a.name), ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'WAN Latency',
+    'Speed Test Download', 'Speed Test Upload', 'Connected Clients']);
+});
+
+test('client count sensor shows clients as lux, clamps to the HomeKit range, keeps last value on null', () => {
+  const a = new ClientCountSensorAccessory(log, api, 'Connected Clients');
+  a.updateCount(57);
+  assert.equal(lux(a), 57);
+  a.updateCount(null);
+  assert.equal(lux(a), 57);
+  a.updateCount(0);
+  assert.equal(lux(a), 0.0001);
+  a.updateCount(1e9);
+  assert.equal(lux(a), 100000);
 });
 
 test('speed test sensor shows Mbps as lux, clamps to the HomeKit range, keeps last value on null', () => {

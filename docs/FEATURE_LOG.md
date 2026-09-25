@@ -112,3 +112,59 @@ Nightly research notes from tools/autofeature. Newest entries at the bottom.
   add a tile that rarely changes.
 - A separate option for each speed-test direction: two options add config noise for little
   benefit. A single `showSpeedTest` adds both sensors.
+
+## 2026-09-25
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23. Homebridge 2.4.0
+  (newest), `@homebridge/hap-nodejs` 2.2.2 installed (2.2.3 on npm), UniFi OS 5.1.33, Network
+  10.6.106. The HAP/Matter research from 2026-09-23 still holds, so it wasn't redone.
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`):
+  - `wlan`: `num_user` 44, `num_guest` 0, `num_iot` 2. `lan`: `num_user` 13, `num_guest` 0,
+    `num_iot` 1. `wan.num_sta` is 57 = 44 + 13, so UniFi's own total counts users but doesn't add
+    `num_iot` on top (IoT looks like a subset of users). Guests are 0 tonight, so it's unconfirmed
+    whether `num_sta` includes guests.
+  - `wlan` also reports `num_ap` 3 / `num_disconnected` 0, and `lan` reports `num_sw` 2 /
+    `num_disconnected` 0. These could back a "device offline" sensor (see ideas).
+  - `www` changed only in values: `latency` 14, `xput_down` 1164, `xput_up` 1057, `drops` 1.
+  - `wan.uptime_stats`: unchanged (WAN availability 0, WAN2 100). `vpn.site_to_site_num_inactive`
+    is still 1 and `vpn.status` is `"error"`, so that tunnel has been down for three nights now.
+
+### Built
+- **Connected Clients sensor** (opt-in, `showClientCount`, default `false`). A LightSensor
+  (1 client = 1 lux, serial `unifi-client-count`) showing `num_user + num_guest` summed over the `wlan`
+  and `lan` subsystems of the `stat/health` response the plugin already fetches, so it adds no
+  requests. `num_iot` isn't added because that would double-count (see findings). It uses whichever
+  subsystem is present, and if neither reports a count it keeps the last value. Zero clients shows
+  as 0.0001 lux (HomeKit's minimum), the same as the other sensors. Why this one: it was idea #2 and
+  the top idea that's useful for this owner right now (idea #1, backup-WAN, would read true
+  permanently here). It supports automations like "more than N devices" and "nobody's devices are
+  connected". I summed the subsystems rather than using `wan.num_sta` because guests are counted
+  explicitly and it doesn't depend on the gateway being in the `wan` subsystem. Default off so
+  existing installs don't get a new tile.
+- Tests: `test/unifiClient.test.js` (sum is 59 with users, guests and numeric strings, IoT not
+  added; works with only `wlan`; null for garbage/missing; poll request count unchanged) and
+  `test/platform.test.js` (accessory list and serials with the option, stable order with every
+  option on, lux mapping, clamping, null keeps the last value).
+
+### Ideas for future nights (ranked)
+1. **UniFi device offline** ContactSensor: open when `wlan.num_disconnected` or
+   `lan.num_disconnected` > 0 (an AP or switch dropped off). From `stat/health`, so no extra request.
+   Both are 0 tonight, so it wouldn't be noisy for this owner.
+2. **VPN site-to-site tunnel status** (`vpn.site_to_site_num_inactive`): one tunnel has been
+   inactive for three nights and `vpn.status` is `"error"`. Ask the owner whether that's expected
+   before building, or it'll be a permanently open sensor.
+3. **"On backup WAN" OccupancySensor** (`wan.uptime_stats`): still permanently true for this owner
+   (WAN1 unused). Only worth building with a configurable primary WAN.
+4. **Separate Wi-Fi / wired / guest counts**: split the client sensor if the owner wants it. It could
+   also be an OccupancySensor for "guests connected" (`num_guest > 0`).
+5. **Speed test age** (`www.speedtest_lastrun`) as StatusFault on the speed test sensors.
+6. **Gateway CPU / overheating** from `stat/device`: still needs the large extra GET.
+
+### Rejected
+- Adding `num_iot` to the client count: it double-counts IoT devices, since UniFi's own
+  `wan.num_sta` (57) equals `wlan.num_user + lan.num_user` without them.
+- Using `wan.num_sta` alone: the sample doesn't show whether it includes guests, and summing the
+  subsystems handles both cases.
+- An "anyone connected" OccupancySensor: with always-on devices (IoT, TVs, hubs) the count never
+  reaches 0, so the sensor would always be occupied. A number is more useful in automations.
