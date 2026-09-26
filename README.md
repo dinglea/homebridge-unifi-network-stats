@@ -9,7 +9,7 @@
 [![npm version](https://img.shields.io/npm/v/homebridge-unifi-network-stats?color=006FFF&style=flat-square)](https://www.npmjs.com/package/homebridge-unifi-network-stats)
 [![Homebridge](https://img.shields.io/badge/homebridge-%E2%89%A51.6.0-006FFF?style=flat-square)](https://homebridge.io)
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-006FFF?style=flat-square)](https://nodejs.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-006FFF?style=flat-square)](LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-006FFF?style=flat-square)](LICENSE.md)
 
 Connects your **UniFi OS console** (UDM, UCG, UXG…) or self-hosted **UniFi Network Application** to HomeKit via Homebridge.
 No cloud. No polling fees. Pure local API.
@@ -155,4 +155,7 @@ A visual setup wizard is included at `setup-ui/index.html`. Open it in any brows
 
 ## License
 
-MIT © See <LICENSE>
+Free for personal and other noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
+Commercial use, including selling it or bundling it into a paid product or service, requires permission from the author; open an issue on GitHub to ask.
+
+Future versions may be released under different terms. Versions already released under this license keep it.
