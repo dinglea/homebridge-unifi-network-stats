@@ -153,6 +153,19 @@ A visual setup wizard is included at `setup-ui/index.html`. Open it in any brows
 
 -----
 
+## Disclaimer
+
+This plugin is provided **as is**, without warranty of any kind, and you use it at your own risk. The author is not responsible or liable for any damage, data loss, downtime, security incident or other problem that may result from using it. See also the "No Liability" section of the [license](LICENSE.md).
+
+The code is maintained with AI (Claude Code):
+
+- **Every night**, an automated job checks dependencies with `npm audit` and has AI review the code for security issues. Any fixes it makes are **committed automatically without a person reviewing them first**, as long as the build and tests pass.
+- **New features** are researched and written by AI and opened as pull requests. The author reviews them before they're merged.
+
+Automated review can miss problems. Review the code and test it in your own setup before you rely on it.
+
+-----
+
 ## License
 
 Free for personal and other noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
