@@ -16,6 +16,8 @@ export interface WanStats {
   speedTestUpMbps: number | null;
   /** Connected clients (users + guests on the "wlan" and "lan" subsystems), or null when not reported. */
   clientCount: number | null;
+  /** Adopted UniFi devices that are disconnected ("wlan", "lan" and "wan" num_disconnected), or null when not reported. */
+  devicesOffline: number | null;
 }
 
 const MIN_LOGIN_BACKOFF_MS = 30_000;
@@ -53,8 +55,12 @@ function reading(value: unknown): number | null {
 
 /** Sum of num_user and num_guest over the given subsystems, or null when none of them reports a count. */
 function clients(subsystems: Array<Record<string, unknown> | undefined>): number | null {
-  const counts = subsystems.flatMap((s) => [reading(s?.num_user), reading(s?.num_guest)])
-    .filter((n): n is number => n !== null);
+  return sum(subsystems.flatMap((s) => [reading(s?.num_user), reading(s?.num_guest)]));
+}
+
+/** Sum of the valid readings, or null when there are none. */
+function sum(values: Array<number | null>): number | null {
+  const counts = values.filter((n): n is number => n !== null);
   return counts.length ? Math.round(counts.reduce((a, b) => a + b, 0)) : null;
 }
 
@@ -172,6 +178,8 @@ export class UnifiClient {
     const subsystems = data as Array<Record<string, unknown>>;
     const wan = subsystems.find((d) => d?.subsystem === 'wan');
     const www = subsystems.find((d) => d?.subsystem === 'www');
+    const wlan = subsystems.find((d) => d?.subsystem === 'wlan');
+    const lan = subsystems.find((d) => d?.subsystem === 'lan');
     if (!wan) {
       throw new Error(`WAN subsystem not found in health data for site "${this.config.site}"`);
     }
@@ -185,10 +193,8 @@ export class UnifiClient {
       latencyMs: reading(www?.latency),
       speedTestDownMbps: reading(www?.xput_down),
       speedTestUpMbps: reading(www?.xput_up),
-      clientCount: clients([
-        subsystems.find((d) => d?.subsystem === 'wlan'),
-        subsystems.find((d) => d?.subsystem === 'lan'),
-      ]),
+      clientCount: clients([wlan, lan]),
+      devicesOffline: sum([wlan, lan, wan].map((s) => reading(s?.num_disconnected))),
     };
   }
 

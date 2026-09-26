@@ -7,6 +7,7 @@ const { UnifiNetworkStatsPlatform } = require('../dist/platform');
 const { LatencySensorAccessory } = require('../dist/latencySensorAccessory');
 const { SpeedTestSensorAccessory } = require('../dist/speedTestSensorAccessory');
 const { ClientCountSensorAccessory } = require('../dist/clientCountSensorAccessory');
+const { DeviceStatusAccessory } = require('../dist/deviceStatusAccessory');
 
 const log = { info() {}, debug() {}, warn() {}, error() {} };
 const api = { hap, on() {} };
@@ -63,10 +64,32 @@ test('showClientCount adds a Connected Clients light sensor after the existing a
   assert.ok(found[3].getServices().some((s) => s.UUID === hap.Service.LightSensor.UUID));
 });
 
+test('showDeviceStatus adds a UniFi Devices contact sensor after the existing accessories', () => {
+  const found = accessories({ showDeviceStatus: true });
+  assert.deepEqual(found.map((a) => a.name), ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'UniFi Devices']);
+  assert.deepEqual(found.map(serial), ['unifi-download-speed', 'unifi-upload-speed', 'unifi-wan-status', 'unifi-device-status']);
+  assert.ok(found[3].getServices().some((s) => s.UUID === hap.Service.ContactSensor.UUID));
+});
+
 test('all optional sensors together keep a stable order', () => {
-  const found = accessories({ showLatency: true, showSpeedTest: true, showClientCount: true });
+  const found = accessories({ showLatency: true, showSpeedTest: true, showClientCount: true, showDeviceStatus: true });
   assert.deepEqual(found.map((a) => a.name), ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'WAN Latency',
-    'Speed Test Download', 'Speed Test Upload', 'Connected Clients']);
+    'Speed Test Download', 'Speed Test Upload', 'Connected Clients', 'UniFi Devices']);
+});
+
+test('device status sensor is closed when all devices are connected, open when any is offline, keeps state on null', () => {
+  const { CONTACT_DETECTED, CONTACT_NOT_DETECTED } = hap.Characteristic.ContactSensorState;
+  const a = new DeviceStatusAccessory(log, api, 'UniFi Devices');
+  const state = () => a.getServices().find((s) => s.UUID === hap.Service.ContactSensor.UUID)
+    .getCharacteristic(hap.Characteristic.ContactSensorState).value;
+  a.updateOffline(0);
+  assert.equal(state(), CONTACT_DETECTED);
+  a.updateOffline(2);
+  assert.equal(state(), CONTACT_NOT_DETECTED);
+  a.updateOffline(null);
+  assert.equal(state(), CONTACT_NOT_DETECTED);
+  a.updateOffline(0);
+  assert.equal(state(), CONTACT_DETECTED);
 });
 
 test('client count sensor shows clients as lux, clamps to the HomeKit range, keeps last value on null', () => {

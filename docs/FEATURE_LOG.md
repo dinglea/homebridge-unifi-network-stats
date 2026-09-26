@@ -168,3 +168,61 @@ Nightly research notes from tools/autofeature. Newest entries at the bottom.
   subsystems handles both cases.
 - An "anyone connected" OccupancySensor: with always-on devices (IoT, TVs, hubs) the count never
   reaches 0, so the sensor would always be occupied. A number is more useful in automations.
+
+## 2026-09-26
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23. Homebridge 2.4.0
+  (newest), `@homebridge/hap-nodejs` 2.2.2 installed (2.2.3 on npm), UniFi OS 5.1.33, Network
+  10.6.106. The HAP/Matter research from 2026-09-23 still holds, so it wasn't redone.
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`):
+  - Device counts per subsystem: `wlan` `num_ap` 3 / `num_adopted` 3 / `num_disconnected` 0 /
+    `num_pending` 0 / `num_disabled` 0; `lan` `num_sw` 2 / `num_adopted` 2 / `num_disconnected` 0 /
+    `num_pending` 0; `wan` `num_gw` 1 / `num_adopted` 1 / `num_disconnected` 0 / `num_pending` 0.
+    Every device is connected tonight, so a "device offline" sensor would be closed (not noisy).
+  - Client counts: `wlan.num_user` 43, `lan.num_user` 13, `wan.num_sta` 56 (= 43 + 13 again, so the
+    2026-09-25 finding that IoT isn't added on top still holds).
+  - `www`: `latency` 3, `xput_down` 1190, `xput_up` 1062, `drops` 1. `wan.uptime_stats` unchanged
+    (WAN availability 0 with `downtime` 1292074 s, WAN2 availability 100). `wan` also has
+    `gw_system-stats` (`cpu`, `mem`, `uptime`, as strings) in `stat/health`, which previous logs
+    didn't mention: gateway CPU/memory may not need the large `stat/device` GET after all.
+  - `vpn`: `status` `"error"`, `site_to_site_num_inactive` 1, for the fourth night in a row.
+  - `stat/sysinfo` is also in the sample (`version` 10.6.106, `update_available` false).
+
+### Built
+- **UniFi Devices sensor** (opt-in, `showDeviceStatus`, default `false`). A ContactSensor ("UniFi
+  Devices", serial `unifi-device-status`): closed while every adopted AP, switch and gateway is
+  connected, open when `num_disconnected` summed over the `wlan`, `lan` and `wan` subsystems is
+  above 0. It reads the `stat/health` response the plugin already fetches, so it adds no requests.
+  `num_pending` (awaiting adoption) and `num_disabled` aren't counted as offline. If no subsystem
+  reports a valid count, it keeps its last state. Why this one: it was idea #1 from last night, it's
+  quiet for this owner (all 6 devices connected), and a contact sensor opening is the same
+  notification/automation pattern as WAN Status ("an AP dropped off" is otherwise invisible in
+  Home). Default off so existing installs don't get a new tile.
+  - `unifiClient.ts`: the sum logic from `clients()` was factored into a small `sum()` helper, which
+    both counts now use. Client count behaviour is unchanged.
+- Tests: `test/unifiClient.test.js` (0 when all connected; 3 with one AP and two switches (as a
+  numeric string) offline; works with only `wlan`; null for missing/negative/garbage; poll request
+  count unchanged) and `test/platform.test.js` (accessory list and serials with the option, stable
+  order with every option on, closed/open/null keeps state).
+
+### Ideas for future nights (ranked)
+1. **Gateway CPU / memory** from `wan.gw_system-stats` in `stat/health` (no extra request). CPU as a
+   LightSensor (1 % = 1 lux), or a StatusFault/ContactSensor above a threshold. The values are strings
+   in the sample; parse them with `reading()`.
+2. **VPN site-to-site tunnel status** (`vpn.site_to_site_num_inactive`): still one tunnel inactive and
+   `vpn.status` `"error"` for four nights. Ask the owner whether that's expected before building.
+3. **"On backup WAN" OccupancySensor** (`wan.uptime_stats`): still permanently true here (WAN1 unused).
+   Only worth building with a configurable primary WAN.
+4. **Separate Wi-Fi / wired / guest counts**, or a "guests connected" OccupancySensor (`num_guest > 0`).
+5. **Speed test age** (`www.speedtest_lastrun`) as StatusFault on the speed test sensors.
+6. **Controller update available** (`stat/sysinfo.update_available`): an extra GET per poll for data
+   that changes rarely; only if polled much less often than the main loop.
+
+### Rejected
+- Counting `num_pending` as offline: a device awaiting adoption isn't a failure, and it would open
+  the sensor whenever the owner unboxes new gear.
+- One sensor per device type (APs / switches / gateway): three tiles for one alert. The single
+  sensor's debug log reports the count; per-device names would need `stat/device` (about 6.4k lines).
+- Using StatusFault instead of opening the contact: it marks the sensor itself as faulty rather than
+  reporting a state, and it doesn't match the open/closed pattern the owner already uses with WAN Status.
