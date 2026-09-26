@@ -68,6 +68,12 @@
         "type": "boolean",
         "default": false,
         "description": "Adds a \"Connected Clients\" light sensor showing how many Wi-Fi and wired clients (including guests) are connected (1 client = 1 lux). Uses the existing poll, no extra requests."
+      },
+      "showDeviceStatus": {
+        "title": "Show UniFi Devices Sensor",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds a \"UniFi Devices\" contact sensor that is closed while all adopted access points, switches and gateways are connected, and opens when any of them goes offline. Uses the existing poll, no extra requests."
       }
     }
   }
