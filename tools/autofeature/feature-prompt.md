@@ -6,6 +6,13 @@ well-tested improvement beats several half-done ones.
 Goal: keep the plugin's Home app experience current with what Apple Home / Homebridge can display,
 and surface the most useful data the owner's UniFi gateway provides.
 
+The owner does NOT expect something new every night. "No change tonight" is a normal, good
+outcome whenever nothing clearly worth the owner's review time stands out. Don't invent work
+or add features just to have something to show. When you do make a change, fixing or updating
+what already exists is just as welcome as something new: correcting a bug, handling a UniFi or
+Homebridge change, making an existing sensor more accurate or reliable, or tidying its
+configuration or documentation. Prefer those over new features when both are worthwhile.
+
 1. Read docs/FEATURE_LOG.md first: it records what earlier runs researched, built, and rejected.
    Don't repeat rejected ideas or redo research that is still current.
 2. Research from local sources only (you have no web access, by design):
@@ -20,10 +27,12 @@ and surface the most useful data the owner's UniFi gateway provides.
 3. Read .unifi-samples/unifi.json: a redacted outline (field names, numbers, enum-like strings) of
    what this owner's UniFi OS console really returns tonight, from the classic
    /proxy/network/api endpoints and the Network Integration API. Build on fields that exist there.
-4. Choose at most ONE improvement with the best value for the owner and the lowest risk, and
-   implement it in src/. Good candidates: a new, clearly useful sensor or characteristic (e.g. latency,
-   uptime, speed-test results, client counts, multi-WAN/failover status), better HomeKit
-   representation of existing data, or adopting a newer Homebridge/HAP capability.
+4. Decide whether anything is worth changing tonight. If so, choose at most ONE change with the
+   best value for the owner and the lowest risk, and implement it in src/. In rough order of
+   preference: a fix to existing behaviour; an update for a Homebridge, HAP or UniFi change; an
+   improvement to an existing sensor; a new, clearly useful sensor or characteristic (e.g.
+   multi-WAN/failover status, uptime); adopting a newer Homebridge/HAP capability. If nothing
+   clears that bar, change no source files and just update the log.
 5. Hard rules:
    - Never remove, rename, change the type of, or change the serial number of the existing
      accessories "WAN Download Speed", "WAN Upload Speed" and "WAN Status" (the owner has automations).
@@ -37,8 +46,9 @@ and surface the most useful data the owner's UniFi gateway provides.
    - Add tests in test/ against the mock server for everything new. `npm test` must pass; if you
      can't make it pass, undo your source changes (still update the log).
    - Only run `npm run build` and `npm test`; don't run git. Only read files inside this repo.
-6. Append a dated entry to docs/FEATURE_LOG.md: key findings with the local files they came from, what you
-   built and why (or why nothing), and ranked ideas for future nights, plus rejected ideas and why.
+6. Append a short, dated entry to docs/FEATURE_LOG.md: key findings with the local files they
+   came from, what you changed and why (or why nothing), and any updates to the ranked ideas and
+   rejected ideas. On a quiet night a few lines are enough.
 
 End your reply with a section that starts with the exact line `## Summary`. Its first line is a
 pull-request title under 70 characters (or `No change tonight`), followed by bullets describing
