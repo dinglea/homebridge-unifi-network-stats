@@ -143,13 +143,7 @@ UniFi OS rate-limits logins. The plugin backs off (30 s, doubling up to 10 min) 
 Double-check the `site` field. Log into your controller and look at the URL — the site name is case-sensitive.
 
 **Speeds show as 0**
-Your user may not have permission to read health stats. In UniFi, create a **Local account** with **Read Only** role and use those credentials.
-
------
-
-## Setup UI
-
-A visual setup wizard is included at `setup-ui/index.html`. Open it in any browser to generate your config snippet without editing JSON manually.
+Your user may not have permission to read health stats. In UniFi, create a **Local account** with **View Only** access to the Network app and use those credentials.
 
 -----
 
