@@ -226,3 +226,41 @@ Nightly research notes from tools/autofeature. Newest entries at the bottom.
   sensor's debug log reports the count; per-device names would need `stat/device` (about 6.4k lines).
 - Using StatusFault instead of opening the contact: it marks the sensor itself as faulty rather than
   reporting a state, and it doesn't match the open/closed pattern the owner already uses with WAN Status.
+
+## 2026-09-27
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23. Homebridge 2.4.0
+  (newest), `@homebridge/hap-nodejs` 2.2.2 installed (2.2.3 on npm), UniFi OS 5.1.33, Network
+  10.6.106. The HAP/Matter research from 2026-09-23 still holds, so it wasn't redone.
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`): only values changed since last night
+  (`www.latency` 13, `xput_down` 1195, `xput_up` 1052; `wlan.num_user` 43, `lan.num_user` 13; every
+  device connected). `wan.status` is `"ok"` even though WAN1 is down, so WAN Status correctly follows
+  the active uplink (WAN2) on this multi-WAN console. `vpn.status` is `"error"` with one inactive
+  site-to-site tunnel for the fifth night in a row. `wan.gw_system-stats` `cpu`/`mem` are redacted
+  strings (4 characters), so their exact format (e.g. `"12.3"`) is still unconfirmed.
+- **README** (checked against the repo): the "Setup UI" section pointed to `setup-ui/index.html`,
+  which doesn't exist in the repo or in the npm `files` list. The troubleshooting tip said
+  "Read Only role" while Requirements says "View Only" access.
+
+### Built
+- No source changes. After four nights of new sensors, the most useful thing tonight was a
+  documentation fix: removed the dead "Setup UI" section from README and made the account-role
+  wording consistent ("View Only" access to the Network app). `npm test` passes (32 tests).
+
+### Ideas for future nights (ranked)
+1. **Stale data when polling fails**: if the console becomes unreachable, every sensor keeps its last
+   value indefinitely, so WAN Status stays "Closed" (online). Consider setting the optional
+   `StatusFault` characteristic (ContactSensor and LightSensor both support it in HAP 2.2.2) after
+   N consecutive failed polls, behind an option. This doesn't change ContactSensorState, so the owner's
+   automations aren't affected. How the Home app shows StatusFault can't be checked locally.
+2. **Gateway CPU / memory** from `wan.gw_system-stats` (no extra request); confirm the string format
+   first.
+3. **VPN site-to-site tunnel status**: still ask the owner whether the inactive tunnel is expected.
+4. **"On backup WAN" OccupancySensor**: only with a configurable primary WAN.
+5. **Speed test age** (`www.speedtest_lastrun`) as StatusFault on the speed test sensors (could share
+   the mechanism from idea #1).
+
+### Rejected
+- Adding a setup wizard to replace the missing `setup-ui/index.html`: Homebridge UI already builds
+  the settings form from `config.schema.json`.
