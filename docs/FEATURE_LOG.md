@@ -264,3 +264,45 @@ Nightly research notes from tools/autofeature. Newest entries at the bottom.
 ### Rejected
 - Adding a setup wizard to replace the missing `setup-ui/index.html`: Homebridge UI already builds
   the settings form from `config.schema.json`.
+
+## 2026-09-28
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **HAP** (`node_modules/@homebridge/hap-nodejs/dist/lib/definitions/ServiceDefinitions.js`,
+  `CharacteristicDefinitions.d.ts`): `StatusFault` (`NO_FAULT` 0 / `GENERAL_FAULT` 1) is an optional
+  characteristic on both ContactSensor and LightSensor. `Service.getCharacteristic()` (`dist/lib/Service.js`)
+  adds an optional characteristic on first use, so no service changes are needed.
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed (`www.latency` 12, `xput_down` 1195,
+  every device connected). VPN still has one inactive site-to-site tunnel (sixth night).
+
+### Built
+- **Fault flag for stale data** (`faultWhenUnreachable`, default `true`). This fixes last night's idea #1.
+  Before, when the console became unreachable, every sensor kept its last value with nothing to show
+  it was stale, so WAN Status kept reading "Closed" (online). Now, after 3 failed polls in a row
+  (`FAULT_AFTER_FAILURES` in `platform.ts`), the plugin sets `StatusFault = GENERAL_FAULT` on every sensor
+  service and logs one warning. The next successful poll clears it and logs an info line. Values and
+  ContactSensorState are left as they were, so the owner's automations don't fire on a plugin/network
+  hiccup. Accessory names, types and serials are unchanged. The poll loop moved into a
+  `poll()` method so it can be tested; its logic is unchanged apart from the fault counter. No extra requests.
+  Default `true` because it's a correctness fix that only shows during an outage. It changes no values,
+  and `false` restores the old behaviour exactly (the characteristic isn't added at all).
+- Tests: `test/unifiClient.test.js` drives the real platform against the mock server (new `down` mode
+  = HTTP 500): no fault before the threshold, fault on all sensors at it, readings/contact unchanged,
+  a single warning per outage, cleared by a good poll, and one login with one GET per poll. It also checks
+  that `false` never adds the characteristic. `test/platform.test.js` checks that `NO_FAULT` is published
+  from startup by default. `npm test`: 35 pass.
+
+### Ideas for future nights (ranked)
+1. **Gateway CPU / memory** from `wan.gw_system-stats` (no extra request); confirm the string format first.
+2. **Speed test age** (`www.speedtest_lastrun`) as StatusFault on the speed test sensors. It could reuse
+   the `setFault` approach, but it would need per-sensor fault state, not just the platform-wide one.
+3. **VPN site-to-site tunnel status**: still ask the owner whether the inactive tunnel is expected.
+4. **"On backup WAN" OccupancySensor**: only with a configurable primary WAN.
+
+### Rejected
+- Opening WAN Status (or zeroing the speeds) when the console is unreachable: an unreachable console
+  isn't a WAN outage, and it would trigger the owner's automations whenever Homebridge loses the LAN.
+- A configurable failure threshold: 3 polls (15 s at the default interval) is enough to ride out one
+  slow response, and another option adds little.

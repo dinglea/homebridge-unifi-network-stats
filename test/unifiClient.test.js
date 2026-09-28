@@ -7,7 +7,9 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const hap = require('@homebridge/hap-nodejs');
 const { UnifiClient } = require('../dist/unifiClient');
+const { UnifiNetworkStatsPlatform, FAULT_AFTER_FAILURES } = require('../dist/platform');
 
 const PASSWORD = 'S3CRET-test-password';
 let server, port, mode, hits, logs;
@@ -28,6 +30,7 @@ before(async () => {
     if (req.url.endsWith('/stat/health')) {
       if (mode === 'redirect') { res.writeHead(302, { location: 'https://example.com/' }); return res.end(); }
       if (mode === 'forbidden') { res.writeHead(403); return res.end(); }
+      if (mode === 'down') { res.writeHead(500); return res.end(); }
       if (!/TOKEN=abc|unifises=x/.test(req.headers.cookie || '')) { res.writeHead(401); return res.end(); }
       const wan = mode === 'offline'
         ? { subsystem: 'wan', status: 'error' }
@@ -189,6 +192,62 @@ test('env proxy is ignored', async () => {
 test('rejects hosts that could redirect credentials', () => {
   for (const host of ['evil.com/#', 'user@evil.com', 'https://10.1.0.1', '10.1.0.1 x']) {
     assert.throws(() => client({ host }), /Invalid UniFi host/);
+  }
+});
+
+function platform(overrides = {}) {
+  hits = {}; logs = [];
+  const log = { info: (m) => logs.push(m), debug() {}, warn: (m) => logs.push(m), error: (m) => logs.push(m) };
+  return new UnifiNetworkStatsPlatform(log, { platform: 'UnifiNetworkStats', host: '127.0.0.1', port, username: 'u',
+    password: PASSWORD, showLatency: true, showDeviceStatus: true, ...overrides }, { hap, on() {} });
+}
+
+function sensorServices(p) {
+  let found;
+  p.accessories((a) => { found = a; });
+  return found.flatMap((a) => a.getServices()).filter((s) => s.UUID !== hap.Service.AccessoryInformation.UUID);
+}
+
+const faults = (p) => sensorServices(p).map((s) => s.getCharacteristic(hap.Characteristic.StatusFault).value);
+
+test(`sensors are marked faulty after ${FAULT_AFTER_FAILURES} failed polls and cleared by the next good one`, async () => {
+  const { NO_FAULT, GENERAL_FAULT } = hap.Characteristic.StatusFault;
+  const p = platform();
+  const services = sensorServices(p);
+  const download = services[0].getCharacteristic(hap.Characteristic.CurrentAmbientLightLevel);
+  const wan = services[2].getCharacteristic(hap.Characteristic.ContactSensorState);
+  mode = 'ok';
+  await p.poll();
+  assert.deepEqual(faults(p), [NO_FAULT, NO_FAULT, NO_FAULT, NO_FAULT, NO_FAULT]);
+  mode = 'down';
+  for (let i = 1; i < FAULT_AFTER_FAILURES; i++) {
+    await p.poll();
+  }
+  assert.ok(faults(p).every((f) => f === NO_FAULT), 'not faulty before the threshold');
+  await p.poll();
+  assert.ok(faults(p).every((f) => f === GENERAL_FAULT), 'faulty at the threshold');
+  // Readings and contact states are left alone, so automations on WAN Status don't fire.
+  assert.equal(download.value, 100);
+  assert.equal(wan.value, hap.Characteristic.ContactSensorState.CONTACT_DETECTED);
+  assert.equal(logs.filter((m) => /marking sensors as faulty/.test(m)).length, 1);
+  await p.poll();
+  assert.equal(logs.filter((m) => /marking sensors as faulty/.test(m)).length, 1, 'warns once per outage');
+  mode = 'ok';
+  await p.poll();
+  assert.ok(faults(p).every((f) => f === NO_FAULT), 'cleared after a good poll');
+  assert.ok(logs.some((m) => /cleared sensor fault/.test(m)));
+  // Failed polls don't add logins or requests beyond the normal one GET per poll.
+  assert.deepEqual(hits, { '/api/auth/login': 1, '/proxy/network/api/s/default/stat/health': FAULT_AFTER_FAILURES + 3 });
+});
+
+test('faultWhenUnreachable: false never adds StatusFault', async () => {
+  const p = platform({ faultWhenUnreachable: false });
+  mode = 'down';
+  for (let i = 0; i <= FAULT_AFTER_FAILURES; i++) {
+    await p.poll();
+  }
+  for (const s of sensorServices(p)) {
+    assert.ok(!s.characteristics.some((c) => c.UUID === hap.Characteristic.StatusFault.UUID), s.displayName);
   }
 });
 

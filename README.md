@@ -100,6 +100,7 @@ Paste this into the `"platforms"` array of your Homebridge `config.json`:
 |`showSpeedTest`     |boolean|`false`    |—       |Add **Speed Test Download** and **Speed Test Upload** sensors (Mbps shown as lux) with the result of UniFi's last speed test. They only change when UniFi runs a test (schedule it in UniFi Network), and keep their last value while no result is reported|
 |`showClientCount`   |boolean|`false`    |—       |Add a **Connected Clients** sensor: Wi-Fi plus wired clients, users and guests (count shown as lux; 0 clients shows as 0.0001 lux, HomeKit's minimum). Keeps its last value while UniFi reports no counts|
 |`showDeviceStatus`  |boolean|`false`    |—       |Add a **UniFi Devices** contact sensor that opens when any adopted access point, switch or gateway is disconnected from UniFi Network (closed while all are connected). Keeps its last state while UniFi reports no device counts|
+|`faultWhenUnreachable`|boolean|`true`   |—       |After 3 failed polls in a row, set HomeKit's **Status Fault** on every sensor so stale readings aren't mistaken for live ones. Values and contact states are left as they were (so automations don't fire); the fault clears on the next successful poll. Set `false` to never show a fault|
 
 ### Finding your site name
 
@@ -141,6 +142,9 @@ UniFi OS rate-limits logins. The plugin backs off (30 s, doubling up to 10 min) 
 
 **WAN subsystem not found**
 Double-check the `site` field. Log into your controller and look at the URL — the site name is case-sensitive.
+
+**Sensors show a fault / warning in the Home app**
+The plugin couldn't fetch stats for 3 polls in a row, so the values shown are stale (see `faultWhenUnreachable`). The Homebridge log has the reason (`Failed to fetch UniFi stats: …`). The fault clears by itself once a poll succeeds.
 
 **Speeds show as 0**
 Your user may not have permission to read health stats. In UniFi, create a **Local account** with **View Only** access to the Network app and use those credentials.

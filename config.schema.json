@@ -74,6 +74,12 @@
         "type": "boolean",
         "default": false,
         "description": "Adds a \"UniFi Devices\" contact sensor that is closed while all adopted access points, switches and gateways are connected, and opens when any of them goes offline. Uses the existing poll, no extra requests."
+      },
+      "faultWhenUnreachable": {
+        "title": "Flag Stale Sensors When UniFi Is Unreachable",
+        "type": "boolean",
+        "default": true,
+        "description": "After 3 failed polls in a row (console unreachable, login backing off, errors), mark every sensor as faulty (HomeKit Status Fault) so stale readings aren't mistaken for live ones. Values and contact states are not changed, so automations don't fire. Cleared by the next successful poll."
       }
     }
   }

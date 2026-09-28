@@ -35,6 +35,15 @@ test('latency sensor is off by default and existing accessories are unchanged', 
   assert.deepEqual(found.map(serial), ['unifi-download-speed', 'unifi-upload-speed', 'unifi-wan-status']);
 });
 
+test('sensors publish StatusFault (no fault) by default, and not with faultWhenUnreachable: false', () => {
+  const statusFaults = (found) => found.flatMap((a) => a.getServices())
+    .filter((s) => s.UUID !== hap.Service.AccessoryInformation.UUID)
+    .map((s) => s.characteristics.find((c) => c.UUID === hap.Characteristic.StatusFault.UUID)?.value);
+  const { NO_FAULT } = hap.Characteristic.StatusFault;
+  assert.deepEqual(statusFaults(accessories({ showSpeedTest: true })), [NO_FAULT, NO_FAULT, NO_FAULT, NO_FAULT, NO_FAULT]);
+  assert.deepEqual(statusFaults(accessories({ faultWhenUnreachable: false })), [undefined, undefined, undefined]);
+});
+
 test('showLatency adds a WAN Latency light sensor after the existing accessories', () => {
   const found = accessories({ showLatency: true });
   assert.deepEqual(found.map((a) => a.name), ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status', 'WAN Latency']);
