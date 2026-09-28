@@ -192,6 +192,11 @@ test('rejects hosts that could redirect credentials', () => {
   }
 });
 
+test('invalid host error does not echo credentials typed into the host', () => {
+  assert.throws(() => client({ host: `https://u:${PASSWORD}@10.1.0.1` }),
+    (e) => /Invalid UniFi host/.test(e.message) && !String(e.stack).includes(PASSWORD));
+});
+
 test('password never appears in logs or errors', async () => {
   const seen = [];
   for (mode of ['ok', 'badpw', '429', 'redirect', 'nowan']) {

@@ -75,7 +75,8 @@ export class UnifiClient {
 
   constructor(private readonly config: UnifiConfig, private readonly log: Logger) {
     if (!HOST_PATTERN.test(config.host)) {
-      throw new Error(`Invalid UniFi host "${config.host}": use a bare hostname or IP address.`);
+      // Don't echo the value: a mistyped host like "https://user:password@console" would log the password.
+      throw new Error('Invalid UniFi host: use a bare hostname or IP address.');
     }
     if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
       throw new Error(`Invalid UniFi port "${config.port}".`);
