@@ -61,7 +61,7 @@
         "title": "Show Speed Test Result Sensors",
         "type": "boolean",
         "default": false,
-        "description": "Adds \"Speed Test Download\" and \"Speed Test Upload\" light sensors showing the result of UniFi's last internet speed test in Mbps (1 Mbps = 1 lux). They change only when UniFi runs a speed test. Uses the existing poll, no extra requests."
+        "description": "Adds \"Speed Test Download\" and \"Speed Test Upload\" light sensors showing the result of UniFi's last internet speed test in Mbps (1 Mbps = 1 lux). They change only when UniFi runs a speed test, and keep their last result after a gateway reboot. Uses the existing poll, no extra requests."
       },
       "showClientCount": {
         "title": "Show Connected Clients Sensor",

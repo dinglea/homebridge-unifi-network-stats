@@ -97,7 +97,7 @@ Paste this into the `"platforms"` array of your Homebridge `config.json`:
 |`pollInterval`      |number |`5`        |—       |Seconds between stat fetches. Minimum: `5`         |
 |`rejectUnauthorized`|boolean|`false`    |—       |Set `true` only if using a valid CA-signed SSL cert|
 |`showLatency`       |boolean|`false`    |—       |Add a **WAN Latency** sensor (ms shown as lux). Keeps its last value while UniFi reports no latency (e.g. offline)|
-|`showSpeedTest`     |boolean|`false`    |—       |Add **Speed Test Download** and **Speed Test Upload** sensors (Mbps shown as lux) with the result of UniFi's last speed test. They only change when UniFi runs a test (schedule it in UniFi Network), and keep their last value while no result is reported|
+|`showSpeedTest`     |boolean|`false`    |—       |Add **Speed Test Download** and **Speed Test Upload** sensors (Mbps shown as lux) with the result of UniFi's last speed test. They only change when UniFi runs a test (schedule it in UniFi Network), and keep their last value while no result is reported (including after a gateway reboot, until UniFi runs its next test)|
 |`showClientCount`   |boolean|`false`    |—       |Add a **Connected Clients** sensor: Wi-Fi plus wired clients, users and guests (count shown as lux; 0 clients shows as 0.0001 lux, HomeKit's minimum). Keeps its last value while UniFi reports no counts|
 |`showDeviceStatus`  |boolean|`false`    |—       |Add a **UniFi Devices** contact sensor that opens when any adopted access point, switch or gateway is disconnected from UniFi Network (closed while all are connected). Keeps its last state while UniFi reports no device counts|
 
