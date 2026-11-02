@@ -35,7 +35,12 @@ before(async () => {
           num_disconnected: mode === 'garbage' ? -1 : 0 };
       const www = mode === 'offline' ? { subsystem: 'www', status: 'error' }
         : mode === 'garbage' ? { subsystem: 'www', status: 'ok', latency: null, xput_down: 'n/a', xput_up: -1 }
-          : { subsystem: 'www', status: 'ok', latency: 13, uptime: 1072944, xput_down: 955, xput_up: '957.5' };
+          // Shape of stat/health a few minutes after a gateway reboot (2026-10-30 sample).
+          : mode === 'rebooted' ? { subsystem: 'www', status: 'ok', latency: 14, uptime: 309, xput_up: 0, xput_down: 0,
+            speedtest_lastrun: 0, speedtest_ping: 0 }
+            : mode === 'tested' ? { subsystem: 'www', status: 'ok', latency: 2, uptime: 82556, xput_down: 872, xput_up: 943,
+              speedtest_lastrun: 1793190988, speedtest_ping: 9 }
+              : { subsystem: 'www', status: 'ok', latency: 13, uptime: 1072944, xput_down: 955, xput_up: '957.5' };
       const wlan = mode === 'garbage' ? { subsystem: 'wlan', num_user: 'n/a', num_guest: -1, num_disconnected: 'n/a' }
         : { subsystem: 'wlan', num_user: 44, num_guest: 2, num_iot: 2, num_ap: 3, num_disconnected: mode === 'apdown' ? 1 : 0 };
       const lan = mode === 'garbage' ? { subsystem: 'lan', num_user: null }
@@ -108,6 +113,39 @@ test('speed test results are null when UniFi reports none or garbage', async () 
     assert.equal(s.speedTestDownMbps, null, mode);
     assert.equal(s.speedTestUpMbps, null, mode);
   }
+});
+
+test('speed test results are null after a gateway reboot (speedtest_lastrun 0), not 0 Mbps', async () => {
+  mode = 'rebooted';
+  const s = await client().getWanStats();
+  assert.equal(s.speedTestDownMbps, null);
+  assert.equal(s.speedTestUpMbps, null);
+  // The rest of the reading is unaffected.
+  assert.equal(s.latencyMs, 14);
+  assert.equal(s.isOnline, true);
+});
+
+test('speed test results are reported once a test has run (speedtest_lastrun set)', async () => {
+  mode = 'tested';
+  const s = await client().getWanStats();
+  assert.equal(s.speedTestDownMbps, 872);
+  assert.equal(s.speedTestUpMbps, 943);
+});
+
+test('speed test sensors keep their last result across a gateway reboot', async () => {
+  const { SpeedTestSensorAccessory } = require('../dist/speedTestSensorAccessory');
+  const { Characteristic, Service } = require('@homebridge/hap-nodejs');
+  const api = { hap: { Characteristic, Service } };
+  const quiet = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
+  const sensor = new SpeedTestSensorAccessory(quiet, api, 'Speed Test Download', 'download');
+  const lux = () => sensor.getServices()[1].getCharacteristic(Characteristic.CurrentAmbientLightLevel).value;
+  const c = client();
+  for (const [m, expected] of [['tested', 872], ['rebooted', 872], ['tested', 872]]) {
+    mode = m;
+    sensor.updateSpeed((await c.getWanStats()).speedTestDownMbps);
+    assert.equal(lux(), expected, m);
+  }
+  assert.equal(hits['/api/auth/login'], 1);
 });
 
 test('latency, speed test results, client count and device status add no requests to the poll', async () => {

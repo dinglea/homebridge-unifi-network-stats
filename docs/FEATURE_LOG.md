@@ -264,3 +264,570 @@ Nightly research notes from tools/autofeature. Newest entries at the bottom.
 ### Rejected
 - Adding a setup wizard to replace the missing `setup-ui/index.html`: Homebridge UI already builds
   the settings form from `config.schema.json`.
+
+## 2026-09-28
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **HAP** (`node_modules/@homebridge/hap-nodejs/dist/lib/definitions/ServiceDefinitions.js`,
+  `CharacteristicDefinitions.d.ts`): `StatusFault` (`NO_FAULT` 0 / `GENERAL_FAULT` 1) is an optional
+  characteristic on both ContactSensor and LightSensor. `Service.getCharacteristic()` (`dist/lib/Service.js`)
+  adds an optional characteristic on first use, so no service changes are needed.
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed (`www.latency` 12, `xput_down` 1195,
+  every device connected). VPN still has one inactive site-to-site tunnel (sixth night).
+
+### Built
+- **Fault flag for stale data** (`faultWhenUnreachable`, default `true`). This fixes last night's idea #1.
+  Before, when the console became unreachable, every sensor kept its last value with nothing to show
+  it was stale, so WAN Status kept reading "Closed" (online). Now, after 3 failed polls in a row
+  (`FAULT_AFTER_FAILURES` in `platform.ts`), the plugin sets `StatusFault = GENERAL_FAULT` on every sensor
+  service and logs one warning. The next successful poll clears it and logs an info line. Values and
+  ContactSensorState are left as they were, so the owner's automations don't fire on a plugin/network
+  hiccup. Accessory names, types and serials are unchanged. The poll loop moved into a
+  `poll()` method so it can be tested; its logic is unchanged apart from the fault counter. No extra requests.
+  Default `true` because it's a correctness fix that only shows during an outage. It changes no values,
+  and `false` restores the old behaviour exactly (the characteristic isn't added at all).
+- Tests: `test/unifiClient.test.js` drives the real platform against the mock server (new `down` mode
+  = HTTP 500): no fault before the threshold, fault on all sensors at it, readings/contact unchanged,
+  a single warning per outage, cleared by a good poll, and one login with one GET per poll. It also checks
+  that `false` never adds the characteristic. `test/platform.test.js` checks that `NO_FAULT` is published
+  from startup by default. `npm test`: 35 pass.
+
+### Ideas for future nights (ranked)
+1. **Gateway CPU / memory** from `wan.gw_system-stats` (no extra request); confirm the string format first.
+2. **Speed test age** (`www.speedtest_lastrun`) as StatusFault on the speed test sensors. It could reuse
+   the `setFault` approach, but it would need per-sensor fault state, not just the platform-wide one.
+3. **VPN site-to-site tunnel status**: still ask the owner whether the inactive tunnel is expected.
+4. **"On backup WAN" OccupancySensor**: only with a configurable primary WAN.
+
+### Rejected
+- Opening WAN Status (or zeroing the speeds) when the console is unreachable: an unreachable console
+  isn't a WAN outage, and it would trigger the owner's automations whenever Homebridge loses the LAN.
+- A configurable failure threshold: 3 polls (15 s at the default interval) is enough to ride out one
+  slow response, and another option adds little.
+
+## 2026-10-03
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106). HAP/Matter
+  research not redone.
+- **The 2026-09-28 fault flag isn't in `src/`**: `platform.ts` has no `faultWhenUnreachable`, `poll()` or
+  `FAULT_AFTER_FAILURES`, and `config.schema.json` has no such option. That PR wasn't merged (it may still
+  be open, or it was declined). I didn't rebuild it: a second copy would conflict with an open PR or go
+  against the owner's decision. `npm test` passes on the current code (33 tests).
+- **The owner's WAN setup changed** (`.unifi-samples/unifi.json`):
+  - `stat/device` (gateway): `last_wan_status` is now `{"WAN":"online","WAN2":"offline"}` (it was WAN2
+    online), `wan1.up`/`is_uplink` true with availability 100, and `active_geo_info` lists only `WAN`.
+    `stat.gw` shows a recent failover (`wan-failover` / `failover-seconds` 3085, `wan2-downtime` 3231,
+    `wan-uptime` 76536). WAN1 is now the primary uplink and WAN2 is down.
+  - `stat/health` `wan.uptime_stats` now lists only `WAN` (availability 100). WAN2 isn't listed at all,
+    even though `stat/device` says it's offline. In earlier samples both WANs were listed while WAN1 was
+    down (availability 0). So `stat/health` doesn't reliably say which WAN is active or that a backup
+    exists. The only clear source is `last_wan_status` in `stat/device` (about 7.1k lines on this console).
+  - WAN Status still reads `wan.status` `"ok"`, which is correct for the active uplink.
+  - Otherwise only values changed: `www.latency` 14, `xput_down` 915, `xput_up` 944; `num_user` 47 + 13
+    (`wan.num_sta` 60); every device connected. `vpn.status` is still `"error"` with one inactive
+    site-to-site tunnel. `wan.gw_system-stats` `cpu`/`mem` are still redacted 4-character strings.
+
+### Built
+- No source changes. Nothing cleared the bar. The one idea that changed tonight (backup WAN, now that
+  WAN1 is primary again) needs data that `stat/health` doesn't reliably provide (see findings).
+
+### Ideas for future nights (ranked)
+1. **Owner decision on the stale-data fault flag (2026-09-28)**: if it was declined, move it to Rejected.
+   If it's still open, it needs no more work.
+2. **"On backup WAN" OccupancySensor**: no longer permanently true for this owner (WAN1 is primary again,
+   and there was a real ~51-minute failover). Source it from `stat/device` `last_wan_status` /
+   `active_geo_info`, fetched much less often than the main poll (e.g. every 60 s) or from
+   `stat/device/<gateway mac>` if that's smaller, using the `gw_mac` that `stat/health` already returns.
+   It needs a sample of the per-device response first, and a mock-server fixture for both WAN states.
+3. **Gateway CPU / memory** from `wan.gw_system-stats`; the string format is still unconfirmed.
+4. **VPN site-to-site tunnel status**: inactive since at least 2026-09-24; ask the owner first.
+5. **Speed test age** (`www.speedtest_lastrun`).
+
+### Rejected
+- Detecting failover from `stat/health` `wan.uptime_stats` alone: tonight's sample omits the offline WAN2
+  entirely, so "only one WAN listed" can mean single-WAN or backup down, and a listed WAN with
+  availability 100 doesn't mean it's the active uplink.
+
+## 2026-10-04
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106). HAP/Matter
+  research not redone.
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`): almost the same as 2026-10-03. `www.latency`
+  is 14, `xput_down` 915 and `xput_up` 944. The speed test values are identical, so no new speed test has
+  run since the one at `speedtest_lastrun` 1791031010 (about 2026-10-03). `num_user` is 46 + 13
+  (`wan.num_sta` 59) and every device is connected. `wan.uptime_stats` still lists only `WAN`
+  (availability 100, `uptime` 107928 s). `vpn.status` is still `"error"` with one inactive site-to-site
+  tunnel. `wan.gw_system-stats` `cpu`/`mem` are still redacted 4-character strings.
+- **Code** (`src/`): I reread the platform, the client and every accessory and found no bugs. The
+  2026-09-28 fault flag is still not in `src/platform.ts` or `config.schema.json`. `npm test` passes
+  (33 tests).
+
+### Built
+- No source changes. The data is unchanged from last night, the ranked ideas are still blocked on the
+  same things (owner decisions or unconfirmed data formats), and the code review found nothing to fix.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03. Idea #1 (owner decision on the stale-data fault flag) is still pending.
+
+## 2026-10-06
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`): only values changed. `www.latency` is 2,
+  `xput_down` 926 and `xput_up` 951 (a new speed test ran, `speedtest_lastrun` 1791203810). `num_user` is
+  45 + 13 (`wan.num_sta` 58) and every device is connected. `wan.uptime_stats` still lists only `WAN`
+  (availability 100, `uptime` 280728 s, so no failover since 2026-10-03). `vpn.status` is still `"error"`
+  with one inactive site-to-site tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings.
+  `stat/sysinfo`: `update_available` false (`previous_version` 10.6.101).
+- **Code** (`src/platform.ts`, `src/unifiClient.ts`): unchanged since 2026-10-04. The stale-data fault flag
+  (2026-09-28) is still not merged. `npm test` passes (33 tests).
+
+### Built
+- No source changes. Nothing is new in the data or the installed packages, and the ranked ideas are still
+  blocked on owner decisions or data formats that haven't been confirmed.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-07
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed. `www.latency` 4; a new speed test ran
+  (`speedtest_lastrun` 1791290252) with `xput_down` 680 / `xput_up` 893, noticeably lower than the ~915-1195
+  of earlier nights (the speed test sensors will show this; nothing for the plugin to do). `num_user` 45 + 13,
+  every device connected. `wan.uptime_stats` still lists only `WAN` (availability 100, `uptime` 367223 s, no
+  failover since 2026-10-03); `stat/device` `last_wan_status` still `WAN` online / `WAN2` offline.
+  `vpn.status` still `"error"` with one inactive site-to-site tunnel. `gw_system-stats` `cpu`/`mem` still
+  redacted strings. `stat/sysinfo` `update_available` false. Integration API still 401.
+- **Code**: `src/` unchanged; the 2026-09-28 fault flag is still not merged. `npm test` passes (33 tests).
+
+### Built
+- No source changes. Same blockers as the last few nights (owner decisions, unconfirmed data formats).
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-08
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): mostly only values changed. `www.latency` 12. A new speed test
+  ran (`speedtest_lastrun` 1791376664) with `xput_down` 657 / `xput_up` 822, the second low result in a row
+  (earlier nights were about 915-1195). `num_user` 45 + 13 (`wan.num_sta` 58), every device connected.
+  `last_wan_status` is still `WAN` online / `WAN2` offline. `vpn.status` is still `"error"` with one inactive
+  tunnel, and `cpu`/`mem` are still redacted.
+- **The uptime fields don't measure WAN uptime**: tonight `stat/health` `wan.uptime_stats.WAN.uptime` is 3592
+  (it was 367223 last night) and `www.uptime` is 3660. But `stat/device` `stat.gw.wan-uptime` is 452935 and
+  `failover-seconds` is still 3085 (the same value as on 2026-10-03), so there was no new outage. The new
+  `time_period` 3559 field next to the uptime suggests `uptime_stats` uses a rolling window. A future "WAN
+  uptime" sensor must not read `uptime_stats.*.uptime` or `www.uptime`. `stat.gw.wan-uptime` looks right, but
+  it is only in the large `stat/device` response.
+- **Code**: `src/` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test` pass
+  (33 tests).
+
+### Built
+- No source changes. The only new finding argues against building an uptime sensor from `stat/health` for now.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+### Rejected
+- **WAN uptime sensor from `stat/health`** (`www.uptime` or `wan.uptime_stats.WAN.uptime`): tonight's sample
+  shows both reset to about 1 h with no outage (see findings), so the sensor would show wrong values.
+
+## 2026-10-09
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed. `www.latency` 2. A new speed test
+  (`speedtest_lastrun` 1791463052) gave `xput_down` 606 / `xput_up` 674, the third low result in a row (the
+  speed test sensors show this; nothing for the plugin to do). `num_user` 47 + 13 (`wan.num_sta` 60), every
+  device connected. `last_wan_status` is still `WAN` online / `WAN2` offline. `vpn.status` is still `"error"`
+  with one inactive tunnel, and `cpu`/`mem` are still redacted.
+- **Uptime follow-up** (confirms the 2026-10-08 rejection): `www.uptime` is now 90084 and
+  `wan.uptime_stats.WAN.uptime` 90016, with `time_period` back to 86400. Last night they were about 3600, so
+  both counters restarted about 25 h ago and have been counting normally since. `stat/device`
+  `stat.gw.wan-uptime` is 539359 (452935 + ~86400) and `failover-seconds` is still 3085, so there was no WAN
+  outage. `stat.gw.wan-uptime` remains the only reliable WAN uptime source, and it's only in `stat/device`.
+- **Code**: `src/` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test` pass
+  (33 tests).
+
+### Built
+- No source changes. Nothing new in the packages or the data, and the ranked ideas are still blocked on
+  owner decisions or unconfirmed data formats.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-10
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed. `www.latency` 2. A new speed test
+  (`speedtest_lastrun` 1791549400) gave `xput_down` 873 / `xput_up` 935, back near the earlier ~915 after three
+  low nights. `num_user` 45 + 13 (`wan.num_sta` 58), every device connected. `www.uptime` 176557 and
+  `uptime_stats.WAN.uptime` 176511 keep counting normally since the reset found on 2026-10-08. `vpn.status`
+  is still `"error"` with one inactive tunnel, and `cpu`/`mem` are still redacted. `stat/sysinfo`
+  `update_available` false.
+- **Code**: `src/` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test` pass
+  (33 tests).
+
+### Built
+- No source changes. Nothing new to build on, and the same blockers remain.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-11
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`, `stat/sysinfo`): only values changed. `www.latency`
+  12, `drops` 3. A new speed test (`speedtest_lastrun` 1791635814) gave `xput_down` 925 / `xput_up` 948, back in
+  the usual range. `num_user` 45 + 13 (`wan.num_sta` 58), every device connected. `www.uptime` 262846 and
+  `uptime_stats.WAN.uptime` 262819 are still counting normally (`time_period` 86400), and `uptime_stats` still
+  lists only `WAN`. `vpn.status` is still `"error"` with one inactive site-to-site tunnel. `gw_system-stats`
+  `cpu`/`mem` are still redacted strings. `stat/sysinfo` `update_available` false.
+- **Code**: `src/` and `config.schema.json` unchanged; the 2026-09-28 fault flag still isn't merged.
+  `npm run build` and `npm test` pass (33 tests).
+
+### Built
+- No source changes. Nothing new in the packages or the data, and the ranked ideas are still blocked on owner
+  decisions or unconfirmed data formats.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-12
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed. `www.latency` 2. A new speed test
+  (`speedtest_lastrun` 1791722198) gave `xput_down` 772 / `xput_up` 894, a bit below the usual range (the speed
+  test sensors already show this). `num_user` 44 + 13 (`wan.num_sta` 57), every device connected (`num_disconnected`
+  0). `www.uptime` 349186 is still counting normally, and `uptime_stats` still lists only `WAN`.
+  `last_wan_status` is still `WAN` online / `WAN2` offline. `stat.gw.wan-uptime` is 798463 (539359 on 2026-10-09
+  plus ~3 days) and `failover-seconds` is still 3085, so there has been no failover. `vpn.status` is still `"error"`
+  with one inactive tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings. `stat/sysinfo`
+  `update_available` false.
+- **Code**: `src/` unchanged; the 2026-09-28 fault flag still isn't merged. `npm test` passes (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-13
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed. `www.latency` 13, `drops` 3. A new speed test
+  (`speedtest_lastrun` 1791808627) gave `xput_down` 938 / `xput_up` 947, in the usual range. `num_user` 44 + 13
+  (`wan.num_sta` 57), every device connected. `www.uptime` 435597 is still counting normally, and `uptime_stats`
+  still lists only `WAN`. `last_wan_status` is still `WAN` online / `WAN2` offline; `stat.gw.wan-uptime` 884906
+  (about one day more than 2026-10-12) and `failover-seconds` still 3085, so there has been no failover. `vpn.status`
+  is still `"error"` with one inactive tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings.
+  `stat/sysinfo` `update_available` false.
+- **Code**: `src/` and `config.schema.json` unchanged; the 2026-09-28 fault flag still isn't merged.
+  `npm run build` and `npm test` pass (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-14
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed. `www.latency` 12, `drops` 3. A new speed test
+  (`speedtest_lastrun` 1791895049) gave `xput_down` 781 / `xput_up` 726, below the usual range again (the speed test
+  sensors already show this). `num_user` 43 + 13 (`wan.num_sta` 56), every device connected. `www.uptime` 522081 is
+  still counting normally, and `uptime_stats` still lists only `WAN`. `last_wan_status` is still `WAN` online / `WAN2`
+  offline; `stat.gw.wan-uptime` 971382 and `failover-seconds` still 3085, so there has been no failover. `vpn.status`
+  is still `"error"` with one inactive tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings.
+  `stat/sysinfo` `update_available` false.
+- **Code**: `src/` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test` pass
+  (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-15
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`, `stat/sysinfo`): only values changed. `www.latency` 12,
+  `drops` 3. A new speed test (`speedtest_lastrun` 1791981419) gave `xput_down` 919 / `xput_up` 948, back in the usual
+  range. `num_user` 43 + 13 (`wan.num_sta` 56), every device connected. `www.uptime` 608484 and
+  `uptime_stats.WAN.uptime` 608453 are still counting normally, and `uptime_stats` still lists only `WAN`.
+  `vpn.status` is still `"error"` with one inactive site-to-site tunnel. `gw_system-stats` `cpu`/`mem` are still
+  redacted strings. `stat/sysinfo` `update_available` false. `stat/device` wasn't re-checked tonight.
+- **Code**: `src/platform.ts` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test`
+  pass (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-16
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed. `www.latency` 12, `drops` 3. A new speed test
+  (`speedtest_lastrun` 1792067797) gave `xput_down` 678 / `xput_up` 910, low again (the speed test sensors already
+  show this). `num_user` 43 + 13 (`wan.num_sta` 56), every device connected. `www.uptime` 694829 is still counting
+  normally, and `uptime_stats` still lists only `WAN`. `stat/device` `last_wan_status` is still `WAN` online / `WAN2`
+  offline; `stat.gw.wan-uptime` 1144142 and `failover-seconds` still 3085, so no failover. `vpn.status` is still
+  `"error"` with one inactive tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings. `stat/sysinfo`
+  `update_available` false. Integration API still 401.
+- **Code**: `src/` and `config.schema.json` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build`
+  and `npm test` pass (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-17
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`): only values changed. `www.latency` 3, `drops` 3. A new speed test
+  (`speedtest_lastrun` 1792154207) gave `xput_down` 917 / `xput_up` 948, in the usual range. `num_user` 43 + 13
+  (`wan.num_sta` 56), every device connected. `www.uptime` 781302 is still counting normally, and `uptime_stats` still
+  lists only `WAN`. `stat/device` `last_wan_status` is still `WAN` online / `WAN2` offline; `stat.gw.wan-uptime`
+  1230589 (about one day more than last night) and `failover-seconds` still 3085, so no failover. `vpn.status` is still
+  `"error"` with one inactive tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings. `stat/sysinfo`
+  `update_available` false.
+- **Code**: `src/platform.ts` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test`
+  pass (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-18
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`, `stat/sysinfo`): only values changed. `www.latency` 12,
+  `drops` 3. A new speed test (`speedtest_lastrun` 1792240595) gave `xput_down` 733 / `xput_up` 825, low again (the
+  speed test sensors already show this). `num_user` 44 + 13 (`wan.num_sta` 57), every device connected. `www.uptime`
+  867579 and `uptime_stats.WAN.uptime` 867537 are still counting normally, and `uptime_stats` still lists only `WAN`.
+  `vpn.status` is still `"error"` with one inactive site-to-site tunnel. `gw_system-stats` `cpu`/`mem` are still
+  redacted strings. `stat/sysinfo` `update_available` false. `stat/device` wasn't re-checked tonight.
+- **Code**: `src/platform.ts` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test`
+  pass (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-19
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`, `stat/sysinfo`): only values changed. `www.latency` 2,
+  `drops` 3. A new speed test (`speedtest_lastrun` 1792326987) gave `xput_down` 821 / `xput_up` 894. `num_user` 44 + 13
+  (`wan.num_sta` 57), every device connected. `www.uptime` 954229 and `uptime_stats.WAN.uptime` 954151 are still
+  counting normally, and `uptime_stats` still lists only `WAN`. `vpn.status` is still `"error"` with one inactive
+  site-to-site tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings. `stat/sysinfo` `update_available`
+  false. `stat/device` wasn't re-checked tonight.
+- **Code**: `src/platform.ts` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test`
+  pass (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-20
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`, `stat/sysinfo`): only values changed. `www.latency` 3,
+  `drops` 3. A new speed test (`speedtest_lastrun` 1792413476) gave `xput_down` 897 / `xput_up` 954. `num_user` 45 + 13
+  (`wan.num_sta` 58), every device connected. `www.uptime` 1040507 and `uptime_stats.WAN.uptime` 1040469 are still
+  counting normally, and `uptime_stats` still lists only `WAN`. `vpn.status` is still `"error"` with one inactive
+  site-to-site tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings. `stat/sysinfo` `update_available`
+  false. `stat/device` wasn't re-checked tonight.
+- **Code**: `src/platform.ts` unchanged; the 2026-09-28 fault flag still isn't merged. `npm test` passes (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-21
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`, `stat/sysinfo`): only values changed. `www.latency` 2,
+  `drops` 3. A new speed test (`speedtest_lastrun` 1792499787) gave `xput_down` 786 / `xput_up` 837. `num_user` 43 + 13
+  (`wan.num_sta` 56), every device connected. `www.uptime` 1126661 and `uptime_stats.WAN.uptime` 1126624 are still
+  counting normally, and `uptime_stats` still lists only `WAN`. `vpn.status` is still `"error"` with one inactive
+  site-to-site tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings. `stat/sysinfo` `update_available`
+  false. `stat/device` wasn't re-checked tonight.
+- **Code**: `src/platform.ts` and `src/unifiClient.ts` unchanged; the 2026-09-28 fault flag still isn't merged.
+  `npm test` passes (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-22
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`, `stat/sysinfo`): only values changed. `www.latency` 2,
+  `drops` 3. A new speed test (`speedtest_lastrun` 1792586203) gave `xput_down` 819 / `xput_up` 940. `num_user` 44 + 13
+  (`wan.num_sta` 57), every device connected. `www.uptime` 1213126 and `uptime_stats.WAN.uptime` 1213081 are still
+  counting normally, and `uptime_stats` still lists only `WAN`. `vpn.status` is still `"error"` with one inactive
+  site-to-site tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings. `stat/sysinfo` `update_available`
+  false. `stat/device` wasn't re-checked tonight.
+- **Code**: `npm test` passes (33 tests). The count hasn't changed, which suggests the 2026-09-28 fault flag still
+  isn't merged.
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-23
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`): unchanged since 2026-09-23 (Homebridge 2.4.0 newest,
+  `@homebridge/hap-nodejs` 2.2.2 installed / 2.2.3 on npm, UniFi OS 5.1.33, Network 10.6.106).
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`, `stat/sysinfo`): only values changed. `www.latency` 12,
+  `drops` 3. A new speed test (`speedtest_lastrun` 1792672591) gave `xput_down` 798 / `xput_up` 706. `num_user` 45 + 13
+  (`wan.num_sta` 58), every device connected. `www.uptime` 1299655 and `uptime_stats.WAN.uptime` 1299578 are still
+  counting normally, and `uptime_stats` still lists only `WAN`. `vpn.status` is still `"error"` with one inactive
+  site-to-site tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings. `stat/sysinfo` `update_available`
+  false. `stat/device` wasn't re-checked tonight.
+- **Code** (`src/platform.ts`, `src/unifiClient.ts`): unchanged. `platform.ts` still has no `faultWhenUnreachable`, so
+  the 2026-09-28 fault flag still isn't merged. `npm test` passes (33 tests).
+
+### Built
+- No source changes. Same blockers as before.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-03.
+
+## 2026-10-29
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`, `stat/sysinfo`): **Network app updated to 10.6.109**
+  (`previous_version` 10.6.106). UniFi OS 5.1.33, Homebridge 2.4.0 (newest) and `@homebridge/hap-nodejs` 2.2.2
+  (2.2.3 on npm) are unchanged. Every `stat/health` field the plugin reads (`wan.status`, `www.latency`,
+  `xput_down`/`xput_up`, `num_user`/`num_guest`, `num_disconnected`) is still present with the same types, so the
+  update needs no code change. Integration API still 401.
+- **The owner's second WAN is gone** (`.unifi-samples/unifi.json`, `stat/device`): `last_wan_status` is now just
+  `{"WAN":"online"}`, there's no `wan2` port object and no `wan2-*`/`failover-*` keys, and `uptime_stats` lists only
+  `WAN`. This looks like a single-WAN setup now.
+- **Correction to 2026-10-08/09: `stat.gw.wan-uptime` isn't "time since last outage" either.** The `stat.gw` object is
+  a stats bucket with its own `time` (1792838100000 ms, about 2026-10-24) and `duration` (428228 s); `wan-uptime`
+  427957 + `wan-downtime` 90 is roughly that duration. So it counts WAN-up seconds inside the bucket and resets when a
+  new bucket starts, not on an outage (it was 1230589 on 2026-10-17). No field seen so far gives a reliable "WAN up
+  since" value.
+- **UniFi data** (`stat/health`): `www.uptime` 26502 and `uptime_stats.WAN.uptime` 26409 (`time_period` 26500) reset
+  about 7 h before the sample, probably when the Network app updated. Otherwise only values changed: `www.latency` 12,
+  `drops` 4, a new speed test (`speedtest_lastrun` 1793190988) gave `xput_down` 852 / `xput_up` 934. `num_user`
+  47 + 13 (`wan.num_sta` 60), every device connected. `vpn.status` is still `"error"` with one inactive site-to-site
+  tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings.
+- **Code**: `src/` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test` pass
+  (33 tests).
+
+### Built
+- No source changes. The Network update didn't affect anything the plugin reads, and tonight's findings take ideas
+  off the list rather than adding one.
+
+### Ideas for future nights (ranked)
+1. **Owner decision on the stale-data fault flag (2026-09-28)**: still pending.
+2. **Gateway CPU / memory** from `wan.gw_system-stats`; the string format is still unconfirmed.
+3. **VPN site-to-site tunnel status**: inactive since at least 2026-09-24; ask the owner first.
+4. **Speed test age** (`www.speedtest_lastrun`).
+- Parked: **"On backup WAN" OccupancySensor**. The owner no longer has a second WAN, so it would never change. Bring
+  it back if a `wan2` object or a second `last_wan_status` entry appears again.
+
+### Rejected
+- **WAN uptime sensor from `stat/device` `stat.gw.wan-uptime`**: it's a per-bucket counter (see findings), so it
+  resets on a schedule rather than after an outage. Together with the 2026-10-08 rejection, no field in the samples
+  supports an uptime sensor.
+
+## 2026-10-30
+
+### Findings
+- **Versions** (`.unifi-samples/versions.json`, `stat/device` gateway `version` 5.1.34.34103): **UniFi OS updated to
+  5.1.34** (was 5.1.33). Network 10.6.109, Homebridge 2.4.0 (newest) and `@homebridge/hap-nodejs` 2.2.2 (2.2.3 on
+  npm) are unchanged. The gateway `uptime` is 82628 s, so it rebooted about 23 h before the sample, probably for the
+  update.
+- **UniFi data** (`.unifi-samples/unifi.json`, `stat/health`): every field the plugin reads is still present with the
+  same type (`wan.status` `"ok"`, `www.latency` 2, `xput_down` 872 / `xput_up` 943, `num_user` 47 + 13, `num_guest` 0,
+  `num_disconnected` 0). So the OS update needs no code change. `www.uptime` 82556 reset with the reboot, which is
+  consistent with the 2026-10-08 rejection. `stat/device` `last_wan_status` is still just `WAN` online (single WAN).
+  `vpn.status` is still `"error"` with one inactive tunnel. `gw_system-stats` `cpu`/`mem` are still redacted strings.
+- **Code**: `src/` unchanged; the 2026-09-28 fault flag still isn't merged. `npm run build` and `npm test` pass
+  (33 tests).
+
+### Built
+- No source changes. The UniFi OS update didn't affect anything the plugin reads, and the same blockers remain.
+
+### Ideas for future nights (ranked)
+- Unchanged from 2026-10-29.
+
+### Second run, 2026-10-30 (newer sample, `generated` 13:36Z)
+- **Findings** (`.unifi-samples/unifi.json`, `stat/health`): the gateway had **just rebooted again**. `www.uptime` was
+  309 s and `uptime_stats.WAN.uptime` 287 s. In that state `www` reports `xput_down` 0, `xput_up` 0,
+  `speedtest_lastrun` 0 and `speedtest_ping` 0, which means no test has run since boot. `reading()` in
+  `src/unifiClient.ts` accepted the 0s, so with `showSpeedTest` on, both Speed Test sensors dropped to 0.0001 lux
+  until UniFi's next scheduled test (up to a day). This is the first sample that caught the console right after a
+  reboot. Everything else the plugin reads was fine (`wan.status` `"ok"`, `latency` 14, `num_user` 45 + 13).
+- **Built: fix.** When `speedtest_lastrun` is reported as 0, the speed test results are treated as "no result" (null),
+  so the sensors keep their last value. A real result (any `speedtest_lastrun` > 0, even a 0 Mbps result) still goes
+  through. Consoles that don't send `speedtest_lastrun` behave as before. No new option: this corrects the existing
+  `showSpeedTest` sensors. No extra requests. README and `config.schema.json` descriptions now mention it. Tests: mock
+  modes `rebooted` (the shape of tonight's sample) and `tested`, plus a sensor test covering a test, a reboot and
+  another test, with one login. `npm test`: 36 pass.
+- **Ideas**: unchanged. For "Speed test age" (#4), note that `speedtest_lastrun` 0 is the "never/since reboot" value.

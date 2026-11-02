@@ -11,7 +11,7 @@ export interface WanStats {
   downloadMbps: number; uploadMbps: number; isOnline: boolean;
   /** Internet latency from the "www" health subsystem, or null when UniFi doesn't report one. */
   latencyMs: number | null;
-  /** Last UniFi speed test result ("www" xput_down/xput_up, Mbps), or null when not reported. */
+  /** Last UniFi speed test result ("www" xput_down/xput_up, Mbps), or null when not reported or no test has run. */
   speedTestDownMbps: number | null;
   speedTestUpMbps: number | null;
   /** Connected clients (users + guests on the "wlan" and "lan" subsystems), or null when not reported. */
@@ -187,13 +187,16 @@ export class UnifiClient {
     // Reset login backoff only once the session actually works, so a login that succeeds but
     // is then rejected still backs off exponentially.
     this.loginFailures = 0;
+    // After a gateway reboot UniFi reports xput_down/xput_up 0 with speedtest_lastrun 0 until the next
+    // test runs. That means "no test yet", not 0 Mbps. Consoles that omit speedtest_lastrun are trusted.
+    const noSpeedTest = reading(www?.speedtest_lastrun) === 0;
     return {
       downloadMbps: (rate(wan['rx_bytes-r']) * 8) / 1_000_000,
       uploadMbps: (rate(wan['tx_bytes-r']) * 8) / 1_000_000,
       isOnline: wan.status === 'ok',
       latencyMs: reading(www?.latency),
-      speedTestDownMbps: reading(www?.xput_down),
-      speedTestUpMbps: reading(www?.xput_up),
+      speedTestDownMbps: noSpeedTest ? null : reading(www?.xput_down),
+      speedTestUpMbps: noSpeedTest ? null : reading(www?.xput_up),
       clientCount: clients([wlan, lan]),
       devicesOffline: sum([wlan, lan, wan].map((s) => reading(s?.num_disconnected))),
     };
