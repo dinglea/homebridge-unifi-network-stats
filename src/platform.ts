@@ -13,8 +13,24 @@ interface Cfg extends PlatformConfig {
   showLatency?: boolean; showSpeedTest?: boolean; showClientCount?: boolean; showDeviceStatus?: boolean;
 }
 
+/** Homebridge doesn't catch platform constructor errors: a throw would shut down the whole bridge over a config typo. */
+function createClient(log: Logger, config: Cfg): UnifiClient | undefined {
+  try {
+    if (!config.host || !config.username || !config.password) {
+      throw new Error('UniFi Network Stats: host, username and password are required.');
+    }
+    return new UnifiClient({
+      host: String(config.host).trim(), port: Number(config.port ?? 443),
+      username: config.username, password: config.password,
+      site: config.site ?? 'default', rejectUnauthorized: config.rejectUnauthorized ?? false,
+    }, log);
+  } catch (err) {
+    log.error(`${err instanceof Error ? err.message : err} Not polling UniFi until the config is fixed.`);
+    return undefined;
+  }
+}
+
 export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
-  private readonly client: UnifiClient;
   private readonly download: SpeedSensorAccessory;
   private readonly upload: SpeedSensorAccessory;
   private readonly wan: WanStatusAccessory;
@@ -25,14 +41,7 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
   private readonly deviceStatus?: DeviceStatusAccessory;
 
   constructor(public readonly log: Logger, public readonly config: Cfg, public readonly api: API) {
-    if (!config.host || !config.username || !config.password) {
-      throw new Error('UniFi Network Stats: host, username and password are required.');
-    }
-    this.client = new UnifiClient({
-      host: String(config.host).trim(), port: Number(config.port ?? 443),
-      username: config.username, password: config.password,
-      site: config.site ?? 'default', rejectUnauthorized: config.rejectUnauthorized ?? false,
-    }, log);
+    const client = createClient(log, config);
     this.download = new SpeedSensorAccessory(log, api, 'WAN Download Speed', 'download');
     this.upload = new SpeedSensorAccessory(log, api, 'WAN Upload Speed', 'upload');
     this.wan = new WanStatusAccessory(log, api, 'WAN Status');
@@ -49,6 +58,9 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
     if (config.showDeviceStatus === true) {
       this.deviceStatus = new DeviceStatusAccessory(log, api, 'UniFi Devices');
     }
+    if (!client) {
+      return;
+    }
     const requested = Number(config.pollInterval ?? 5);
     // Node treats setInterval delays above 2^31-1 ms as 1 ms, which would hammer the console.
     const interval = Number.isFinite(requested) ? Math.min(Math.max(requested, 5), 2_147_483) : 5;
@@ -60,7 +72,7 @@ export class UnifiNetworkStatsPlatform implements StaticPlatformPlugin {
       }
       polling = true;
       try {
-        const s = await this.client.getWanStats();
+        const s = await client.getWanStats();
         this.download.updateSpeed(s.downloadMbps);
         this.upload.updateSpeed(s.uploadMbps);
         this.wan.updateStatus(s.isOnline);

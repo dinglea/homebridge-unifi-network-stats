@@ -132,6 +132,24 @@ test('huge pollInterval is capped so setInterval does not fire every 1 ms', () =
   assert.ok(delays[0] >= 5000 && delays[0] <= 2 ** 31 - 1, String(delays[0]));
 });
 
+test('invalid config logs an error and skips polling instead of throwing (a throw stops all of Homebridge)', () => {
+  const password = 'S3CRET-test-password';
+  const invalid = [{ host: `https://u:${password}@10.1.0.1` }, { host: '' }, { username: '' }, { password: '' }, { port: 70000 }];
+  for (const config of invalid) {
+    const errors = [];
+    const events = [];
+    const platform = new UnifiNetworkStatsPlatform({ ...log, error: (m) => errors.push(m) },
+      { ...base, password, ...config }, { hap, on: (e) => events.push(e) });
+    assert.equal(errors.length, 1, JSON.stringify(config));
+    assert.ok(!errors[0].includes(password));
+    assert.deepEqual(events, []);
+    // Accessories stay registered so HomeKit keeps their rooms and automations.
+    let found;
+    platform.accessories((a) => { found = a; });
+    assert.deepEqual(found.map((a) => a.name), ['WAN Download Speed', 'WAN Upload Speed', 'WAN Status']);
+  }
+});
+
 test('latency sensor shows ms as lux, clamps to the HomeKit range, keeps last value on null', () => {
   const a = new LatencySensorAccessory(log, api, 'WAN Latency');
   a.updateLatency(13);
